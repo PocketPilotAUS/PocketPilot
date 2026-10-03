@@ -62,8 +62,16 @@ The initial version will not include:
 ```text
 PocketPilot/
 ├── backend/
+│   ├── app/
+│   │   ├── algorithms/
+│   │   ├── ai/
+│   │   ├── models/
+│   │   ├── services/
+│   │   └── main.py
+│   ├── tests/
+│   └── requirements.txt
 ├── frontend/
 ├── docs/
 ├── data/
-├── tests/
+├── .gitignore
 └── README.md
