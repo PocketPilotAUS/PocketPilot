@@ -1,222 +1,122 @@
-
 # PocketPilot
 
-PocketPilot is an intelligent personal finance assistant designed to help users track expenses, understand spending patterns, and make informed financial decisions.
+PocketPilot is a prototype mobile personal-finance assistant built with **Expo / React Native (TypeScript)** and a **FastAPI / SQLite** backend. It records manually entered expenses, summarizes spending by category, compares months, and supports recommendation endpoints, including optional local AI explanations through Ollama.
 
-The project is being developed as a university team project.
+> **Prototype notice:** Mobile registration/login uses fictional accounts stored locally for demonstration. The backend has no user authentication or per-user data isolation. Do **not** enter real passwords, banking credentials, or sensitive financial records.
 
-## Project Overview
+## Repository
 
-PocketPilot aims to combine financial analysis, personalized budgeting, debt repayment planning, and AI-assisted recommendations in one application.
-
-The current implementation focuses on transaction management, spending analysis, and AI-generated explanations.
-
-## Implemented Features
-
-### Transaction Management
-- Add transactions with amount, category, description, and date.
-- Retrieve saved transactions.
-- Delete transactions.
-- Store transactions persistently using SQLite.
-- Validate transaction data.
-
-### Spending Analysis
-- Calculate total spending.
-- Calculate spending by category.
-- Calculate category percentages.
-- Compare spending between two months.
-- Analyze transactions stored in the database.
-
-### Financial Recommendations
-- Detect spending increases of 20% or more.
-- Detect spending decreases of 20% or more.
-- Generate rule-based financial recommendations.
-- Generate recommendations using actual stored transactions.
-
-### AI Integration
-- Generate natural-language explanations of recommendations.
-- Use Qwen3 4B through Ollama.
-- Run the AI model locally or on another computer on the same private network.
-- Return AI explanations through FastAPI.
-- Handle unavailable AI services with an HTTP 503 response.
-
-### Testing
-- Automated unit tests for financial calculations.
-- API tests using isolated SQLite databases.
-- Mocked AI tests that do not require a running Ollama server.
-
-## Planned Features
-
-- Frontend dashboard.
-- User authentication and account management.
-- User-specific transaction storage.
-- Smart budgeting and savings planning.
-- Debt repayment planner using avalanche and snowball methods.
-- Additional financial insights.
-- Improved AI explanation validation.
-- Deployment and security improvements.
-
-## Technology Stack
-
-**Backend:** Python 3.12, FastAPI, Uvicorn
-
-**Database:** SQLite, SQLAlchemy
-
-**Validation:** Pydantic
-
-**AI:** Ollama, Qwen3 4B, OpenAI-compatible Python SDK
-
-**Testing:** pytest, HTTPX, FastAPI TestClient
-
-**Version Control:** Git and GitHub
-
-## Project Structure
+https://github.com/PocketPilotAUS/PocketPilot
 
 ```text
 PocketPilot/
-├── Backend/
-│   ├── app/
-│   │   ├── algorithms/
-│   │   ├── ai/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   ├── database.py
-│   │   └── main.py
-│   ├── tests/
-│   ├── init_db.py
-│   └── requirements.txt
-├── docs/
-├── data/
-├── .gitignore
-└── README.md
+  Backend/                 FastAPI API, SQLite, algorithms, tests
+    app/main.py
+    app/database.py
+    app/models/transaction.py
+  Mobile/                  Expo React Native TypeScript app
+    App.tsx
+    src/screens/
+    src/styles/            External, theme-aware stylesheets
+    src/components/
+    src/services/
+    src/theme/
+  docs/                    Technical documentation and handoff guide
 ```
 
-## Installation
+## Prerequisites
 
-### 1. Clone the Repository
+- Git and Visual Studio Code
+- Python **3.12** and pip
+- Node.js LTS and npm
+- Expo Go on an iPhone (or an appropriate emulator)
+- Both phone and development PC on the same trusted Wi-Fi for LAN testing
+- Optional for AI: Ollama and the model/configuration expected by `Backend/app/ai/client.py` (previously tested with Qwen3 4B)
 
-```bash
+## Setup — Windows PowerShell
+
+Clone the repository:
+
+```powershell
 git clone https://github.com/PocketPilotAUS/PocketPilot.git
-cd PocketPilot/Backend
+cd PocketPilot
 ```
 
-### 2. Create a Virtual Environment
+Start backend in **terminal 1**:
 
 ```powershell
+cd Backend
 py -3.12 -m venv venv
-```
-
-Activate it on Windows:
-
-```powershell
 .\venv\Scripts\Activate.ps1
-```
-
-### 3. Install Dependencies
-
-```powershell
 python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 0.0.0.0
 ```
 
-### 4. Initialize the Database
+If PowerShell blocks activation, use `venv\Scripts\python.exe` for commands instead. Check http://127.0.0.1:8000/docs on the PC.
+
+Start mobile in **terminal 2**:
 
 ```powershell
-python init_db.py
+cd Mobile
+npm install
+npx expo start
 ```
 
-This creates the local SQLite database and transaction table.
+Open Expo Go on the iPhone and scan the QR code. **Before mobile testing**, find the PC's LAN IPv4 address with `ipconfig` and update the `API_BASE_URL` in `Mobile/App.tsx` from the previous developer's local address to `http://YOUR_PC_IP:8000`. Test `http://YOUR_PC_IP:8000/spending/summary` in iPhone Safari. Keep the backend running.
 
-### 5. Start the Backend
+The development HTTP API is for a trusted local network only; production requires HTTPS and authentication.
 
-```powershell
-python -m uvicorn app.main:app --reload
-```
+## What works in the current prototype
 
-Open:
+- Animated welcome screen, metallic/glass UI, dark/light theme toggle
+- Demo registration, login, session restore, and logout using AsyncStorage
+- Manual expense entry, including custom category, description and date
+- Expense history and deletion with confirmation
+- Dashboard total expenses and category breakdown from SQLite-backed API
+- Backend monthly spending comparison and deterministic recommendations
+- Optional backend AI recommendation explanations via Ollama/Qwen3 (API tested; **not displayed in mobile UI yet**)
 
-http://127.0.0.1:8000/docs
+## API quick checks
 
-This displays the available FastAPI endpoints.
+- `GET /` — health message
+- `POST /transactions/` — create expense
+- `GET /transactions/` — list expenses
+- `DELETE /transactions/{id}` — remove expense
+- `GET /spending/summary` — total and category breakdown
+- `GET /spending/compare?year=2026&month=10` — compare months
+- `GET /recommendations/?year=2026&month=10` — rules-based advice
+- `GET /recommendations/ai?year=2026&month=10` — optional AI explanation
 
-## AI Configuration
+Use FastAPI Swagger at http://127.0.0.1:8000/docs to test endpoint schemas and responses. AI responses require the configured Ollama server, and may be empty when there are no qualifying month-over-month changes.
 
-PocketPilot uses Qwen3 4B through Ollama.
+## Tests
 
-Install Ollama on the computer that will host the AI model:
-
-https://ollama.com/download
-
-Download the model:
-
-```powershell
-ollama pull qwen3:4b
-```
-
-Create a `.env` file inside `Backend/` containing:
-
-```env
-OLLAMA_URL=http://127.0.0.1:11434/v1
-```
-
-If Ollama runs on another computer, replace `127.0.0.1` with that computer's private network IP address.
-
-The Ollama server must be configured to accept connections from the backend computer.
-
-Do not expose Ollama directly to the public internet.
-
-## Running Tests
-
-From the `Backend` directory:
+From `Backend` with the environment activated:
 
 ```powershell
 python -m pytest
 ```
 
-Tests use temporary databases and mocked AI responses where appropriate.
+From `Mobile`:
 
-## API Endpoints
+```powershell
+npx tsc --noEmit
+```
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/` | Backend status |
-| POST | `/transactions/` | Create a transaction |
-| GET | `/transactions/` | Retrieve transactions |
-| DELETE | `/transactions/{transaction_id}` | Delete a transaction |
-| GET | `/spending/summary` | Calculate spending summary |
-| GET | `/spending/compare` | Compare monthly spending |
-| GET | `/recommendations/` | Generate recommendations |
-| GET | `/recommendations/ai` | Generate AI explanations |
+These are commands to run locally; test results are **not** asserted by this document. Also manually verify register → dashboard → add transaction → history → delete → logout → login → app restart.
 
-Detailed endpoint documentation is available in `docs/api-documentation.md`.
+## Known limitations / next work
 
-## Current Limitations
+1. Replace demo authentication with hashed-password backend auth and token/session handling; link all data to user IDs.
+2. Preserve existing SQLite data carefully while migrating transaction schema.
+3. Add income tracking, editing/search/filtering transactions, budgets and savings goals.
+4. Implement recurring bills, subscriptions, debt payoff planner.
+5. Add charts, AI recommendation cards and a data-grounded AI chat.
+6. Build Profile/Settings, notification preferences, reminder system and persistent theme choice.
+7. Add security tests, error handling, environment-based configuration and deployment instructions.
 
-- The backend currently uses a shared local transaction database.
-- Authentication and user-specific data isolation are not implemented.
-- Transaction editing and income records are not yet supported.
-- The frontend is not yet integrated.
-- AI explanations are not automatically verified for numerical accuracy.
-- The application is a development prototype and is not ready for production financial use.
+See `docs/DEVELOPER_HANDOFF.md` for an ordered development plan and troubleshooting.
 
-## Team Development Workflow
+## Git hygiene
 
-Development takes place on feature branches.
-
-1. Update the local `main` branch.
-2. Create a feature branch.
-3. Implement and test the feature.
-4. Push the branch to GitHub.
-5. Create a pull request.
-6. Review and merge approved changes.
-
-## Documentation
-
-- [Core Algorithms](docs/core-algorithms.md)
-- [API Documentation](docs/api-documentation.md)
-
-## Project Status
-
-The backend prototype currently supports transaction storage, spending analysis, monthly comparisons, financial recommendations, and AI-generated explanations.
-
-Frontend integration, budgeting, debt planning, authentication, and deployment remain future development tasks.
+Never commit `Backend/venv/`, `Mobile/node_modules/`, `*.db`, `.env`, secrets, local credentials or Expo cache. Check `git status` and `git diff --cached` before committing. Documentation and source code can be committed after review.
