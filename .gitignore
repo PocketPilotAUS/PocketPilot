@@ -21,3 +21,9 @@ Thumbs.db
 
 # Testing cache
 .pytest_cache/
+
+# Local SQLite databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
