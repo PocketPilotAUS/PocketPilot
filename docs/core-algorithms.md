@@ -1,68 +1,122 @@
-# Core Algorithms
 
-## Spending Analysis
+# PocketPilot Core Algorithms
 
-The spending analysis module processes user transaction data to provide basic insights into spending behavior.
+This document explains the financial calculations and recommendation logic currently implemented in PocketPilot.
 
-The current implementation supports:
+## 1. Spending Analysis
 
-- Calculation of total spending
-- Calculation of spending by category
-- Calculation of each category's percentage of total spending
-- Comparison of category spending between two months
+File: `Backend/app/algorithms/spending_analysis.py`
 
-### Monthly Spending Comparison
+### 1.1 Total Spending
 
-The system compares spending in each category between the current and previous month using percentage change:
+Calculates the sum of transaction amounts.
 
-Percentage Change = ((Current Spending - Previous Spending) / Previous Spending) × 100
+Formula:
 
-A positive percentage indicates an increase in spending, while a negative percentage indicates a decrease.
+Total Spending = Sum of all transaction amounts
 
-### Testing
+### 1.2 Spending by Category
 
-Unit tests are included to verify the spending calculations using pytest.
+Groups transactions by category and calculates the total spending for each category.
 
-## Recommendation Engine
+Example:
 
-The recommendation engine analyzes percentage changes in
-spending categories and generates financial insights.
+- Food: AED 750
+- Transport: AED 200
+- Shopping: AED 500
 
-### Recommendation Rules
+### 1.3 Category Percentages
 
-- Spending increase of 20% or more:
-  Generate a high-priority recommendation.
-- Spending decrease of 20% or more:
-  Generate a low-priority informational message.
-- Changes between -20% and +20%:
-  No recommendation is generated.
+Calculates the percentage of total spending represented by each category.
 
-The 20% threshold is currently a development assumption
-and is subject to review by the Finance team member.
+Formula:
 
-### AI Explanation System
+Category Percentage = (Category Spending / Total Spending) × 100
 
-PocketPilot uses a locally hosted Qwen3 4B model through
-Ollama to generate natural-language explanations.
+### 1.4 Monthly Spending Comparison
 
-The AI model runs on a separate desktop computer and
-communicates with the FastAPI backend through a private
-network connection.
+Compares category spending between two months.
 
-The recommendation engine calculates the financial
-information before sending it to the AI model.
+Formula:
+
+Percentage Change = ((Current - Previous) / Previous) × 100
+
+A positive value indicates increased spending.
+
+A negative value indicates decreased spending.
+
+Categories with zero previous-month spending are currently excluded from percentage-change calculations.
+
+## 2. Recommendation Engine
+
+File: `Backend/app/algorithms/recommendations.py`
+
+The recommendation engine uses monthly spending changes to identify significant differences.
+
+### Rules
+
+| Condition | Result | Priority |
+|---|---|---|
+| Increase >= 20% | Spending increase recommendation | High |
+| Decrease <= -20% | Spending decrease notification | Low |
+| Between -20% and +20% | No recommendation | None |
+
+The 20% threshold is a provisional development assumption that requires Finance team review.
+
+Recommendations contain:
+
+- Category
+- Recommendation type
+- Priority
+- Percentage change
+- Message
+
+## 3. Database Integration
+
+File: `Backend/app/database.py`
+
+Transactions are stored in SQLite using SQLAlchemy.
+
+The application retrieves transaction records and converts them into the format expected by the spending-analysis functions.
+
+This allows the existing algorithms to operate on saved transaction data without duplicating their calculation logic.
+
+## 4. AI Explanation System
+
+Files:
+
+- `Backend/app/ai/explanation.py`
+- `Backend/app/ai/client.py`
+
+The AI explanation system converts calculated financial recommendations into natural-language explanations.
+
+The backend uses Qwen3 4B through Ollama's OpenAI-compatible API.
+
+### Workflow
+
+1. Retrieve saved transactions.
+2. Calculate monthly spending changes.
+3. Generate rule-based recommendations.
+4. Prepare an AI prompt containing the verified calculations.
+5. Send the prompt to Qwen3 4B.
+6. Return the generated explanation.
+
+### AI Safety Instructions
 
 The AI model is instructed to:
-- Use only the supplied financial information.
-- Avoid inventing amounts, percentages, or balances.
-- Avoid unsupported assumptions about the user.
-- Provide short and understandable explanations.
 
-### Current Limitations
+- Use only supplied financial information.
+- Avoid inventing amounts or percentages.
+- Avoid unsupported assumptions.
+- Avoid claiming to know why spending changed.
+- Avoid making financial guarantees.
 
-- The AI integration currently uses sample financial data.
-- The 20% recommendation threshold is provisional.
-- The AI explanations are not yet automatically verified
-  against the original financial calculations.
-- The Ollama server must be running and reachable.
-- The AI system is not yet connected to the frontend.
+These instructions reduce risk but do not guarantee accuracy.
+
+## 5. Current Limitations
+
+- Financial amounts currently use floating-point representation.
+- Categories are not automatically normalized.
+- New categories without previous-month spending are excluded from percentage comparisons.
+- AI-generated explanations are not independently validated.
+- Budgeting and debt planning algorithms are not yet implemented.
