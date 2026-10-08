@@ -27,3 +27,16 @@ Thumbs.db
 *.db-journal
 *.db-shm
 *.db-wal
+
+# React Native / Expo
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Local configuration
+*.local
+
+# Keep example environment files
+!.env.example
