@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,12 @@ import {
 import LoginScreen from "./src/screens/LoginScreen";
 import RegisterScreen from "./src/screens/RegisterScreen";
 
-import { DemoUser, getCurrentUser, logout } from "./src/services/authService";
+import { AuthUser, restoreSession, logout } from "./src/services/authService";
+import {
+  apiFetch,
+  SessionExpiredError,
+  setSessionExpiredHandler,
+} from "./src/services/apiClient";
 
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider } from "./src/theme/ThemeContext";
@@ -40,30 +45,16 @@ function PocketPilotApp() {
     | "history";
 
   const [screen, setScreen] = useState<Screen>("welcome");
+  const screenRef = useRef<Screen>(screen);
 
-  const [currentUser, setCurrentUser] = useState<DemoUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    const restoreSession = async () => {
-      try {
-        const user = await getCurrentUser();
+    screenRef.current = screen;
+  }, [screen]);
 
-        if (user) {
-          setCurrentUser(user);
-          setScreen("dashboard");
-        }
-      } catch (error) {
-        console.error("Failed to restore session:", error);
-      } finally {
-        setCheckingSession(false);
-      }
-    };
-
-    restoreSession();
-  }, []);
-
-  const handleAuthenticated = (user: DemoUser) => {
+  const handleAuthenticated = (user: AuthUser) => {
     setCurrentUser(user);
     setScreen("dashboard");
   };
@@ -92,29 +83,89 @@ function PocketPilotApp() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const restore = async () => {
+      try {
+        // Checks the saved login token with the backend
+        const result = await restoreSession(API_BASE_URL);
+
+        if (result.status === "authenticated") {
+          setCurrentUser(result.user);
+          setScreen("dashboard");
+        } else if (result.status === "offline") {
+          // Token kept: the dashboard shows the connection error, and
+          // the next request either works or returns to sign-in
+          setScreen("dashboard");
+        }
+      } catch (error) {
+        console.error("Failed to restore session:", error);
+      } finally {
+        setCheckingSession(false);
+      }
+    };
+
+    restore();
+  }, []);
+
+  useEffect(() => {
+    // Called when any request is rejected with 401 (expired or invalid token)
+    setSessionExpiredHandler(() => {
+      const signedInScreens: Screen[] = ["dashboard", "addTransaction", "history"];
+
+      // Ignore late responses once the user is already signed out
+      if (!signedInScreens.includes(screenRef.current)) return;
+
+      // Updated immediately so simultaneous 401s show only one alert
+      screenRef.current = "login";
+      setCurrentUser(null);
+      setSpending(null);
+      setScreen("login");
+
+      Alert.alert(
+        "Session expired",
+        "Your session has expired. Please sign in again."
+      );
+    });
+
+    return () => setSessionExpiredHandler(null);
+  }, []);
+
+  useEffect(() => {
     if (screen !== "dashboard") return;
+
+    // Set when the user leaves the dashboard (e.g. logs out), so a late
+    // response can never show one user's totals to the next user
+    let cancelled = false;
 
     const fetchSpending = async () => {
       setLoading(true);
       setError("");
 
       try {
-        const response = await fetch(`${API_BASE_URL}/spending/summary`);
+        // Summary of the logged-in user's transactions only
+        const response = await apiFetch(API_BASE_URL, "/spending/summary");
 
         if (!response.ok) {
           throw new Error("Failed to load spending data");
         }
 
         const data: SpendingSummary = await response.json();
-        setSpending(data);
+
+        if (!cancelled) setSpending(data);
       } catch (err) {
+        // An expired session is handled above by returning to sign-in
+        if (err instanceof SessionExpiredError || cancelled) return;
+
         setError("Could not connect to PocketPilot backend.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchSpending();
+
+    return () => {
+      cancelled = true;
+    };
   }, [screen]);
 
   if (checkingSession) {
@@ -133,6 +184,7 @@ function PocketPilotApp() {
   if (screen === "login") {
     return (
       <LoginScreen
+        apiBaseUrl={API_BASE_URL}
         onLogin={handleAuthenticated}
         onRegister={() => setScreen("register")}
         onBack={() => setScreen("welcome")}
@@ -143,6 +195,7 @@ function PocketPilotApp() {
   if (screen === "register") {
     return (
       <RegisterScreen
+        apiBaseUrl={API_BASE_URL}
         onRegister={handleAuthenticated}
         onLogin={() => setScreen("login")}
         onBack={() => setScreen("welcome")}

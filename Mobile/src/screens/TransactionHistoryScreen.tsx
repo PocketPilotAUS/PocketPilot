@@ -15,6 +15,7 @@ import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
 import { useAppTheme } from "../theme/ThemeContext";
 import { createTransactionHistoryStyles } from "../styles/TransactionHistoryStyles";
+import { apiFetch, SessionExpiredError } from "../services/apiClient";
 
 type Transaction = {
   id: number;
@@ -44,7 +45,8 @@ export default function TransactionHistoryScreen({
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/transactions/`);
+        // Returns only the logged-in user's transactions
+        const response = await apiFetch(apiBaseUrl, "/transactions/");
 
         if (!response.ok) {
           throw new Error("Failed to fetch transactions");
@@ -58,7 +60,10 @@ export default function TransactionHistoryScreen({
         );
 
         setTransactions(sorted);
-      } catch {
+      } catch (error) {
+        // An expired session is handled by App, which returns to sign-in
+        if (error instanceof SessionExpiredError) return;
+
         setError("Could not load transactions. Check your connection.");
       } finally {
         setLoading(false);
@@ -84,21 +89,26 @@ export default function TransactionHistoryScreen({
             setDeletingId(id);
 
             try {
-              const response = await fetch(
-                `${apiBaseUrl}/transactions/${id}`,
+              const response = await apiFetch(
+                apiBaseUrl,
+                `/transactions/${id}`,
                 {
                   method: "DELETE",
                 }
               );
 
-              if (!response.ok) {
+              // 404: already deleted (e.g. on another device), so it is
+              // removed from the list like a successful delete
+              if (!response.ok && response.status !== 404) {
                 throw new Error("Failed to delete transaction");
               }
 
               setTransactions((current) =>
                 current.filter((transaction) => transaction.id !== id)
               );
-            } catch {
+            } catch (error) {
+              if (error instanceof SessionExpiredError) return;
+
               Alert.alert(
                 "Error",
                 "Could not delete the transaction. Please try again."

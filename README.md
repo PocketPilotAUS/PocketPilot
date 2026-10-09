@@ -2,7 +2,7 @@
 
 PocketPilot is a prototype mobile personal-finance assistant built with **Expo / React Native (TypeScript)** and a **FastAPI / SQLite** backend. It records manually entered expenses, summarizes spending by category, compares months, and supports recommendation endpoints, including optional local AI explanations through Ollama.
 
-> **Prototype notice:** The backend has user accounts with Argon2-hashed passwords, JWT Bearer authentication and per-user data isolation. The mobile app still uses its local demo login and has **not yet been connected** to backend authentication (see [docs/mobile-auth-handoff.md](docs/mobile-auth-handoff.md)). The development API runs over plain HTTP. Do **not** enter real passwords, banking credentials, or sensitive financial records.
+> **Prototype notice:** The app has real user accounts: Argon2-hashed passwords on the backend, JWT Bearer authentication, tokens stored in the phone's secure storage, and per-user data isolation (see [docs/mobile-auth-handoff.md](docs/mobile-auth-handoff.md)). The development API runs over plain HTTP. Do **not** enter real passwords, banking credentials, or sensitive financial records.
 
 ## Repository
 
@@ -25,7 +25,7 @@ PocketPilot/
     src/screens/
     src/styles/            External, theme-aware stylesheets
     src/components/
-    src/services/
+    src/services/          Backend calls, auth and secure token storage
     src/theme/
   docs/                    Technical documentation and handoff guides
 ```
@@ -77,6 +77,8 @@ npx expo start
 
 Open Expo Go on the iPhone and scan the QR code. **Before mobile testing**, find the PC's LAN IPv4 address with `ipconfig` and update the `API_BASE_URL` in `Mobile/App.tsx` from the previous developer's local address to `http://YOUR_PC_IP:8000`. Check `http://YOUR_PC_IP:8000/` in iPhone Safari (the financial endpoints now require a login token, so open those through the app or Swagger). Keep the backend running.
 
+Create an account in the app: accounts from the old demo login are not transferred. After pulling new changes, run `npm install` again in `Mobile` (the app uses `expo-secure-store`, which is included in Expo Go).
+
 ## Setup — macOS (Terminal)
 
 Install Python 3.12 if needed (for example with [Homebrew](https://brew.sh): `brew install python@3.12`), then:
@@ -97,7 +99,7 @@ Paste the printed value after `JWT_SECRET_KEY=` in `Backend/.env`, prepare the d
 python -m uvicorn app.main:app --reload --host 0.0.0.0
 ```
 
-Start mobile in a second terminal with `cd Mobile`, `npm install`, `npx expo start`. On macOS, find the LAN address with `ipconfig getifaddr en0`.
+Start mobile in a second terminal with `cd Mobile`, `npm install`, `npx expo start` (Node.js LTS required, e.g. `brew install node@24`). On macOS, find the LAN address with `ipconfig getifaddr en0`.
 
 ## Environment configuration
 
@@ -158,8 +160,8 @@ Use `--database path/to/file.db` to migrate a different file.
 ## What works in the current prototype
 
 - Animated welcome screen, metallic/glass UI, dark/light theme toggle
-- Demo registration, login, session restore, and logout using AsyncStorage (mobile; not yet connected to the backend)
-- Backend user registration and login with Argon2-hashed passwords and JWT Bearer tokens
+- Registration, login, session restore and logout connected to the backend, with Argon2-hashed passwords and JWT Bearer tokens
+- Login tokens stored with `expo-secure-store` (iOS Keychain / Android Keystore); expired sessions return to sign-in
 - Per-user data isolation: each user only sees, analyses and deletes their own transactions
 - Manual expense entry, including custom category, description and date
 - Expense history and deletion with confirmation
@@ -204,7 +206,10 @@ From `Mobile`:
 
 ```powershell
 npx tsc --noEmit
+npx expo-doctor
 ```
+
+The Mobile project has no automated test framework or ESLint setup yet; `npx expo lint` sets ESLint up on first run (a team decision). See [docs/mobile-auth-handoff.md](docs/mobile-auth-handoff.md) for the checks already run and the manual device test checklist.
 
 These are commands to run locally; test results are **not** asserted by this document. Also manually verify register → dashboard → add transaction → history → delete → logout → login → app restart.
 
@@ -227,7 +232,7 @@ Known limitations:
 
 ## Known limitations / next work
 
-1. Connect the mobile app to backend authentication ([docs/mobile-auth-handoff.md](docs/mobile-auth-handoff.md)).
+1. Finish device testing of mobile authentication: session expiry, offline start-up and Android (tested on iPhone so far; [checklist](docs/mobile-auth-handoff.md#5-manual-test-checklist-expo-go-on-a-phone)).
 2. Add income tracking, editing/search/filtering transactions, budgets and savings goals.
 3. Implement recurring bills, subscriptions, debt payoff planner.
 4. Add charts, AI recommendation cards and a data-grounded AI chat.
