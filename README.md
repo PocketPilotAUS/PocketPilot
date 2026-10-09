@@ -2,7 +2,7 @@
 
 PocketPilot is a prototype mobile personal-finance assistant built with **Expo / React Native (TypeScript)** and a **FastAPI / SQLite** backend. It records manually entered expenses, summarizes spending by category, compares months, and supports recommendation endpoints, including optional local AI explanations through Ollama.
 
-> **Prototype notice:** The app has real user accounts: Argon2-hashed passwords on the backend, JWT Bearer authentication, tokens stored in the phone's secure storage, and per-user data isolation (see [docs/mobile-auth-handoff.md](docs/mobile-auth-handoff.md)). The development API runs over plain HTTP. Do **not** enter real passwords, banking credentials, or sensitive financial records.
+> **Prototype notice:** The app has real user accounts: Argon2-hashed passwords on the backend, JWT Bearer authentication, tokens stored in the phone's secure storage, and per-user data isolation. The development API runs over plain HTTP. Do **not** enter real passwords, banking credentials, or sensitive financial records.
 
 ## Repository
 
@@ -209,7 +209,7 @@ npx tsc --noEmit
 npx expo-doctor
 ```
 
-The Mobile project has no automated test framework or ESLint setup yet; `npx expo lint` sets ESLint up on first run (a team decision). See [docs/mobile-auth-handoff.md](docs/mobile-auth-handoff.md) for the checks already run and the manual device test checklist.
+The Mobile project has no automated test framework or ESLint setup yet; `npx expo lint` sets ESLint up on first run (a team decision). The checks already run and the manual device test checklist are in the mobile authentication handoff document shared with the team.
 
 These are commands to run locally; test results are **not** asserted by this document. Also manually verify register → dashboard → add transaction → history → delete → logout → login → app restart.
 
@@ -232,7 +232,7 @@ Known limitations:
 
 ## Known limitations / next work
 
-1. Finish device testing of mobile authentication: session expiry, offline start-up and Android (tested on iPhone so far; [checklist](docs/mobile-auth-handoff.md#5-manual-test-checklist-expo-go-on-a-phone)).
+1. Finish device testing of mobile authentication: session expiry, offline start-up and Android (tested on iPhone so far; see the checklist in the mobile authentication handoff document shared with the team).
 2. Add income tracking, editing/search/filtering transactions, budgets and savings goals.
 3. Implement recurring bills, subscriptions, debt payoff planner.
 4. Add charts, AI recommendation cards and a data-grounded AI chat.
