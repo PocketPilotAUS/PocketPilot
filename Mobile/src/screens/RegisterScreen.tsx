@@ -19,15 +19,21 @@ import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
 import { useAppTheme } from "../theme/ThemeContext";
 import { createRegisterStyles } from "../styles/RegisterStyles";
-import { register, DemoUser } from "../services/authService";
+import {
+  register,
+  AuthUser,
+  PASSWORD_MIN_LENGTH,
+} from "../services/authService";
 
 type Props = {
-  onRegister: (user: DemoUser) => void;
+  apiBaseUrl: string;
+  onRegister: (user: AuthUser) => void;
   onLogin: () => void;
   onBack: () => void;
 };
 
 export default function RegisterScreen({
+  apiBaseUrl,
   onRegister,
   onLogin,
   onBack,
@@ -68,8 +74,8 @@ export default function RegisterScreen({
     setLoading(true);
 
     try {
-      // Register using our dummy authentication service
-      const result = await register(name, email, password);
+      // Create the account on the backend, then sign in
+      const result = await register(apiBaseUrl, name, email, password);
 
       if (result.success && result.user) {
         onRegister(result.user);
@@ -177,7 +183,7 @@ export default function RegisterScreen({
               <TextInput
                 value={password}
                 onChangeText={setPassword}
-                placeholder="At least 6 characters"
+                placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
                 placeholderTextColor={colors.textMuted}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
@@ -264,9 +270,9 @@ export default function RegisterScreen({
             </Pressable>
           </View>
 
-          {/* Demo Notice */}
+          {/* Development Notice */}
           <Text style={styles.demoNote}>
-            Demo authentication only. Use fictional credentials.
+            Development build. Use test credentials only.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

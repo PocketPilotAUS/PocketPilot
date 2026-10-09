@@ -16,12 +16,16 @@ import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
 import { useAppTheme } from "../theme/ThemeContext";
 import { createAddTransactionStyles } from "../styles/AddTransactionStyles";
+import { apiFetch, SessionExpiredError } from "../services/apiClient";
 
 type Props = {
   onBack: () => void;
   onSaved: () => void;
   apiBaseUrl: string;
 };
+
+// Largest amount the backend accepts for one transaction
+const MAX_AMOUNT = 1_000_000_000;
 
 const categories = [
   "Food",
@@ -61,6 +65,14 @@ export default function AddTransactionScreen({
       return;
     }
 
+    if (numericAmount > MAX_AMOUNT) {
+      Alert.alert(
+        "Invalid amount",
+        "Please enter an amount of up to AED 1,000,000,000."
+      );
+      return;
+    }
+
     if (category === "Other" && !customCategory.trim()) {
       Alert.alert(
         "Category required",
@@ -80,7 +92,8 @@ export default function AddTransactionScreen({
         String(today.getDate()).padStart(2, "0"),
       ].join("-");
 
-      const response = await fetch(`${apiBaseUrl}/transactions/`, {
+      // Sent with the login token; the backend links it to this user
+      const response = await apiFetch(apiBaseUrl, "/transactions/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,12 +110,19 @@ export default function AddTransactionScreen({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save transaction");
+        Alert.alert(
+          "Error",
+          "Could not save the transaction. Please check the details and try again."
+        );
+        return;
       }
 
       Alert.alert("Success", "Transaction saved successfully!");
       onSaved();
-    } catch {
+    } catch (error) {
+      // An expired session is handled by App, which returns to sign-in
+      if (error instanceof SessionExpiredError) return;
+
       Alert.alert(
         "Connection error",
         "Could not save the transaction. Check that FastAPI is running."

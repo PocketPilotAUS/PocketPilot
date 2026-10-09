@@ -19,15 +19,17 @@ import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
 import { useAppTheme } from "../theme/ThemeContext";
 import { createLoginStyles } from "../styles/LoginStyles";
-import { login, DemoUser } from "../services/authService";
+import { login, AuthUser } from "../services/authService";
 
 type Props = {
-  onLogin: (user: DemoUser) => void;
+  apiBaseUrl: string;
+  onLogin: (user: AuthUser) => void;
   onRegister: () => void;
   onBack: () => void;
 };
 
 export default function LoginScreen({
+  apiBaseUrl,
   onLogin,
   onRegister,
   onBack,
@@ -54,7 +56,7 @@ export default function LoginScreen({
     setLoading(true);
 
     try {
-      const result = await login(email, password);
+      const result = await login(apiBaseUrl, email, password);
 
       if (result.success && result.user) {
         onLogin(result.user);
@@ -207,9 +209,9 @@ export default function LoginScreen({
             </Pressable>
           </View>
 
-          {/* Demo Notice */}
+          {/* Development Notice */}
           <Text style={styles.demoNote}>
-            Demo authentication only. Use fictional credentials.
+            Development build. Use test credentials only.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
