@@ -7,10 +7,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+from conftest import auth_headers, login_user, register_user
 
 
 @pytest.fixture
-def client():
+def client(jwt_secret):
     # Separate in-memory database for each test
     test_engine = create_engine(
         "sqlite://",
@@ -37,6 +38,11 @@ def client():
 
     try:
         with TestClient(app) as test_client:
+            # Every request in these tests is made by one logged-in user
+            register_user(test_client)
+            token = login_user(test_client).json()["access_token"]
+            test_client.headers.update(auth_headers(token))
+
             yield test_client
     finally:
         app.dependency_overrides.clear()
