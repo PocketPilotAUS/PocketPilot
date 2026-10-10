@@ -239,8 +239,6 @@ Known limitations:
 5. Build Profile/Settings, notification preferences, reminder system and persistent theme choice.
 6. Add rate limiting, HTTPS deployment, token refresh/logout, and password reset.
 
-See `docs/DEVELOPER_HANDOFF.md` for an ordered development plan and troubleshooting.
-
 ## Git hygiene
 
 Never commit `Backend/venv/`, `Mobile/node_modules/`, `*.db` (including migration backups), `.env`, secrets, local credentials or Expo cache. Check `git status` and `git diff --cached` before committing. Documentation and source code can be committed after review.

@@ -1,24 +1,36 @@
-
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
+  ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
   StatusBar,
   Switch,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { CalendarDays, Check, Minus, NotebookPen, Plus, Repeat, Tag } from "lucide-react-native";
 
-import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
-import AmbientBackground from "../components/AmbientBackground";
-import MetallicGlassCard from "../components/MetallicGlassCard";
-import MetallicGlassButton from "../components/MetallicGlassButton";
-import { useAppTheme } from "../theme/ThemeContext";
-import { createAddTransactionStyles } from "../styles/AddTransactionStyles";
+import CategoryIcon from "../components/transactions/CategoryIcon";
+import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
+import { createAddExpenseStyles } from "../styles/AddExpenseStyles";
+import {
+  CATEGORY_MAX_LENGTH,
+  DESCRIPTION_MAX_LENGTH,
+  EXPENSE_CATEGORIES,
+  buildExpenseRequest,
+  newRequestKey,
+  sanitizeAmount,
+  sanitizeDay,
+  stepDay,
+  validateExpense,
+} from "../utils/addExpense";
+import { formatShortDate, toISODate } from "../utils/transactions";
 
 type Props = {
   onBack: () => void;
@@ -26,27 +38,9 @@ type Props = {
   apiBaseUrl: string;
 };
 
-// Largest amount the backend accepts for one transaction
-const MAX_AMOUNT = 1_000_000_000;
-
-const categories = [
-  "Rent",
-  "Entertainment",
-  "Food",
-  "Transport",
-  "Shopping",
-  "Subscriptions",
-  "Bills",
-  "Other",
-];
-
-export default function AddTransactionScreen({
-  onBack,
-  onSaved,
-  apiBaseUrl,
-}: Props) {
-  const { colors, mode } = useAppTheme();
-  const styles = createAddTransactionStyles(colors);
+export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
+  const { styles, palette, mode } = useDashboardTheme();
+  const add = createAddExpenseStyles(palette);
 
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Food");
@@ -54,74 +48,48 @@ export default function AddTransactionScreen({
   const [description, setDescription] = useState("");
   const [monthly, setMonthly] = useState(false);
   const [paymentDay, setPaymentDay] = useState(String(new Date().getDate()));
-  const [requestKey] = useState(() => "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const n = Math.floor(Math.random() * 16); return (c === "x" ? n : (n & 3) | 8).toString(16); }));
+  // One key per visit, so retrying a monthly save never creates a duplicate
+  const [requestKey] = useState(newRequestKey);
   const [saving, setSaving] = useState(false);
 
+  const scroll = useRef<ScrollView>(null);
+  const content = useRef<View>(null);
+
+  // Scrolls a focused field into view above the keyboard and Save button
+  const reveal = (input: TextInput | null) => {
+    setTimeout(() => {
+      if (!input || !content.current) return;
+      input.measureLayout(content.current, (_x, y) => {
+        scroll.current?.scrollTo({ y: Math.max(0, y - 100), animated: true });
+      });
+    }, 250);
+  };
+
   const saveTransaction = async () => {
-    const numericAmount = Number(amount);
+    if (saving) return;
 
-    if (
-      !amount.trim() ||
-      !Number.isFinite(numericAmount) ||
-      numericAmount <= 0
-    ) {
-      Alert.alert(
-        "Invalid amount",
-        "Please enter an amount greater than zero."
-      );
+    const form = { amount, category, customCategory, description, monthly, paymentDay };
+    const problem = validateExpense(form);
+
+    if (problem) {
+      Alert.alert(problem.title, problem.message);
       return;
     }
 
-    if (numericAmount > MAX_AMOUNT) {
-      Alert.alert(
-        "Invalid amount",
-        "Please enter an amount of up to AED 1,000,000,000."
-      );
-      return;
-    }
-
-    if (category === "Other" && !customCategory.trim()) {
-      Alert.alert(
-        "Category required",
-        "Please enter a name for your custom category."
-      );
-      return;
-    }
-
-    if (monthly && (!/^\d{1,2}$/.test(paymentDay) || Number(paymentDay) < 1 || Number(paymentDay) > 31)) { Alert.alert("Payment day", "Choose a day from 1 to 31."); return; }
     setSaving(true);
 
     try {
-      const today = new Date();
-
-      const localDate = [
-        today.getFullYear(),
-        String(today.getMonth() + 1).padStart(2, "0"),
-        String(today.getDate()).padStart(2, "0"),
-      ].join("-");
+      const { path, body } = buildExpenseRequest(form, new Date(), requestKey);
 
       // Sent with the login token; the backend links it to this user
-      const response = await apiFetch(apiBaseUrl, monthly ? "/recurring/" : "/transactions/", {
+      const response = await apiFetch(apiBaseUrl, path, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: numericAmount,
-          category:
-            category === "Other"
-              ? customCategory.trim()
-              : category,
-          description: description.trim() || null,
-          ...(monthly ? { day: Number(paymentDay), request_key: requestKey } : { date: localDate }),
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
-        Alert.alert(
-          "Error",
-          "Could not save the transaction. Please check the details and try again."
-        );
+        Alert.alert("Error", "Could not save the transaction. Please check the details and try again.");
         return;
       }
 
@@ -131,118 +99,225 @@ export default function AddTransactionScreen({
       // An expired session is handled by App, which returns to sign-in
       if (error instanceof SessionExpiredError) return;
 
-      Alert.alert(
-        "Connection error",
-        "Could not save the transaction. Check that FastAPI is running."
-      );
+      Alert.alert("Connection error", "Could not save the transaction. Check that FastAPI is running.");
     } finally {
       setSaving(false);
     }
   };
 
+  const today = new Date();
+  const todayLabel = formatShortDate(toISODate(today), today);
+
+  // The amount field grows with its text (and the font shrinks for long
+  // amounts), so "AED" stays next to the number and nothing is clipped
+  const shown = amount || "0.00";
+  const amountFontSize = shown.length > 10 ? 30 : shown.length > 7 ? 38 : 46;
+  const amountWidth = Math.ceil(shown.length * amountFontSize * 0.62) + 12;
+
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <StatusBar
-        barStyle={mode === "dark" ? "light-content" : "dark-content"}
-      />
+    <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
+      <StatusBar barStyle={mode === "dark" ? "light-content" : "dark-content"} />
 
-      <AmbientBackground />
+      <KeyboardAvoidingView style={add.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ScrollView
+          ref={scroll}
+          style={add.flex}
+          contentContainerStyle={add.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        >
+          <View ref={content}>
+            <View style={styles.header}>
+              <View style={styles.headerText}>
+                <Text style={styles.eyebrow}>New expense</Text>
+                <Text style={styles.title}>Add expense</Text>
+              </View>
 
-      <KeyboardFormScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+              {/* Expenses are always recorded with today's date */}
+              <View style={add.dateChip} accessible accessibilityLabel={`Date: today, ${todayLabel}`}>
+                <CalendarDays size={14} color={palette.textSecondary} strokeWidth={2.2} />
+                <Text style={add.dateChipText}>Today · {todayLabel}</Text>
+              </View>
+            </View>
 
-        <Text style={styles.title}>Add Transaction</Text>
-        <Text style={styles.subtitle}>
-          Record a new expense
-        </Text>
+            {/* Amount */}
+            <View style={[styles.card, add.amountCard]}>
+              <Text style={styles.cardLabel}>Amount</Text>
+              <View style={add.amountRow}>
+                <Text style={add.currency}>AED</Text>
+                <TextInput
+                  value={amount}
+                  onChangeText={(value) => setAmount(sanitizeAmount(value))}
+                  placeholder="0.00"
+                  placeholderTextColor={palette.textMuted}
+                  keyboardType="decimal-pad"
+                  style={[add.amountInput, { fontSize: amountFontSize, width: amountWidth }]}
+                  maxLength={13}
+                  editable={!saving}
+                  accessibilityLabel="Amount in AED"
+                />
+              </View>
+              <Text style={add.amountHint}>Up to AED 1,000,000,000</Text>
+            </View>
 
-        <MetallicGlassCard>
-          <Text style={styles.label}>Amount (AED)</Text>
+            {/* Category */}
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardLabel}>Category</Text>
+              </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 45.50"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-            value={amount}
-            onChangeText={setAmount}
-          />
+              <View style={add.grid} accessibilityRole="radiogroup">
+                {EXPENSE_CATEGORIES.map((item) => {
+                  const selected = category === item;
 
-          <Text style={styles.label}>Category</Text>
+                  return (
+                    <Pressable
+                      key={item}
+                      onPress={() => setCategory(item)}
+                      disabled={saving}
+                      style={({ pressed }) => [add.tile, selected && add.tileSelected, pressed && styles.buttonDisabled]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={item}
+                    >
+                      <CategoryIcon category={item} />
+                      <Text
+                        style={[add.tileLabel, selected && add.tileLabelSelected]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
+                        {item}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-          <View style={styles.categories}>
-            {categories.map((item) => {
-              const selected = category === item;
+              {category === "Other" && (
+                <View style={add.customField}>
+                  <Text style={styles.editorLabel}>Category name</Text>
+                  <View style={styles.inputRow}>
+                    <Tag size={16} color={palette.textMuted} strokeWidth={2.2} />
+                    <TextInput
+                      value={customCategory}
+                      onChangeText={setCustomCategory}
+                      placeholder="e.g. Gym"
+                      placeholderTextColor={palette.textMuted}
+                      autoCapitalize="words"
+                      maxLength={CATEGORY_MAX_LENGTH}
+                      editable={!saving}
+                      style={add.fieldInput}
+                      onFocus={(event) => reveal(event.currentTarget as unknown as TextInput)}
+                      accessibilityLabel="Custom category name"
+                    />
+                  </View>
+                </View>
+              )}
+            </View>
 
-              return (
-                <TouchableOpacity
-                  key={item}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.categoryButton,
-                    selected && styles.selectedCategory,
-                  ]}
-                  onPress={() => setCategory(item)}
-                >
-                  <Text
-                    style={[
-                      styles.categoryText,
-                      selected && styles.selectedCategoryText,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {category === "Other" && (
-            <>
-              <Text style={styles.label}>
-                What is the category?
-              </Text>
-
+            {/* Description */}
+            <View style={add.fieldRow}>
+              <NotebookPen size={17} color={palette.textMuted} strokeWidth={2.2} />
               <TextInput
-                style={styles.input}
-                placeholder="e.g. Entertainment"
-                placeholderTextColor={colors.textMuted}
-                value={customCategory}
-                onChangeText={setCustomCategory}
-                autoCapitalize="words"
-                maxLength={40}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Description (optional)"
+                placeholderTextColor={palette.textMuted}
+                maxLength={DESCRIPTION_MAX_LENGTH}
+                editable={!saving}
+                style={add.fieldInput}
+                onFocus={(event) => reveal(event.currentTarget as unknown as TextInput)}
+                returnKeyType="done"
+                accessibilityLabel="Description"
               />
-            </>
-          )}
+            </View>
 
-          <Text style={styles.label}>
-            Description (optional)
-          </Text>
+            {/* Repeat monthly (Karim's recurring expenses) */}
+            <View style={styles.card}>
+              <View style={add.repeatRow}>
+                <View style={add.repeatIcon}>
+                  <Repeat size={18} color={palette.accent} strokeWidth={2.2} />
+                </View>
+                <View style={add.repeatText}>
+                  <Text style={add.repeatTitle}>Repeat monthly</Text>
+                  <Text style={add.repeatSubtitle}>Record this expense every month</Text>
+                </View>
+                <Switch
+                  value={monthly}
+                  onValueChange={setMonthly}
+                  disabled={saving}
+                  trackColor={{ false: palette.track, true: palette.accent }}
+                  thumbColor="#FFFFFF"
+                  ios_backgroundColor={palette.track}
+                  accessibilityLabel="Repeat expense monthly"
+                />
+              </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="What did you spend on?"
-            placeholderTextColor={colors.textMuted}
-            value={description}
-            onChangeText={setDescription}
-          />
-          <Text style={styles.label}>Repeat monthly</Text>
-          <Switch accessibilityLabel="Repeat expense monthly" value={monthly} onValueChange={setMonthly} trackColor={{ false: colors.border, true: colors.primary }} thumbColor={colors.surface} />
-          {monthly && <>
-            <Text style={styles.label}>Monthly payment day (1–31)</Text>
-            <TextInput style={styles.input} accessibilityLabel="Monthly payment day" value={paymentDay} onChangeText={setPaymentDay} keyboardType="number-pad" maxLength={2} />
-            <Text style={styles.label}>Today's expense is saved now. Monthly repeats start next month and automatically count as spent. Shorter months use their last day.</Text>
-          </>}
-        </MetallicGlassCard>
+              {monthly && (
+                <View style={add.repeatDetails}>
+                  <View style={add.dayRow}>
+                    <Text style={add.dayLabel}>Payment day each month</Text>
+                    <View style={add.stepper}>
+                      <Pressable
+                        onPress={() => setPaymentDay((day) => stepDay(day, -1))}
+                        disabled={saving}
+                        style={add.stepButton}
+                        accessibilityRole="button"
+                        accessibilityLabel="Earlier payment day"
+                      >
+                        <Minus size={16} color={palette.text} strokeWidth={2.4} />
+                      </Pressable>
+                      <TextInput
+                        value={paymentDay}
+                        onChangeText={(value) => setPaymentDay(sanitizeDay(value))}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        editable={!saving}
+                        style={add.dayInput}
+                        onFocus={(event) => reveal(event.currentTarget as unknown as TextInput)}
+                        accessibilityLabel="Monthly payment day"
+                      />
+                      <Pressable
+                        onPress={() => setPaymentDay((day) => stepDay(day, 1))}
+                        disabled={saving}
+                        style={add.stepButton}
+                        accessibilityRole="button"
+                        accessibilityLabel="Later payment day"
+                      >
+                        <Plus size={16} color={palette.text} strokeWidth={2.4} />
+                      </Pressable>
+                    </View>
+                  </View>
 
-        <MetallicGlassButton
-          title={saving ? "Saving..." : "Save Transaction"}
-          onPress={saveTransaction}
-          disabled={saving}
-        />
-      </KeyboardFormScrollView>
+                  <Text style={add.repeatNote}>
+                    Today’s expense is saved now. Monthly repeats start next month and automatically
+                    count as spent. Shorter months use their last day.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Always visible: above the keyboard while typing, above the tab bar otherwise */}
+        <View style={add.footer}>
+          <Pressable
+            onPress={() => { void saveTransaction(); }}
+            disabled={saving}
+            style={({ pressed }) => [add.saveButton, (pressed || saving) && styles.buttonDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel={monthly ? "Save monthly expense" : "Save transaction"}
+          >
+            {saving ? (
+              <ActivityIndicator color={palette.onAccent} />
+            ) : (
+              <Check size={19} color={palette.onAccent} strokeWidth={2.6} />
+            )}
+            <Text style={add.saveText}>{saving ? "Saving…" : "Save Transaction"}</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
