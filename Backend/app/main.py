@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import ConfigurationError
 from app.database import MAX_DATABASE_ID, get_db
 from app.dependencies import CurrentUser
-from app.routers import auth
+from app.routers import auth, chat, budget, proposals, recurring
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionResponse
@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="PocketPilot API")
 
 app.include_router(auth.router)
+app.include_router(chat.router)
+app.include_router(budget.router)
+app.include_router(proposals.router)
+app.include_router(recurring.router)
 
 
 @app.exception_handler(ConfigurationError)
@@ -83,6 +87,7 @@ async def validation_error_handler(request: Request, error: RequestValidationErr
 
 
 def user_transactions(db: Session, user: User):
+    recurring.sync_recurring(db, user.id)
     # Every transaction query goes through this filter. Unowned legacy
     # rows (user_id NULL) never match, so they stay hidden from everyone.
     return db.query(Transaction).filter(Transaction.user_id == user.id)

@@ -8,9 +8,11 @@ import {
   ScrollView,
   Alert,
   StatusBar,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
 import AmbientBackground from "../components/AmbientBackground";
 import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
@@ -28,6 +30,8 @@ type Props = {
 const MAX_AMOUNT = 1_000_000_000;
 
 const categories = [
+  "Rent",
+  "Entertainment",
   "Food",
   "Transport",
   "Shopping",
@@ -48,6 +52,9 @@ export default function AddTransactionScreen({
   const [category, setCategory] = useState("Food");
   const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
+  const [monthly, setMonthly] = useState(false);
+  const [paymentDay, setPaymentDay] = useState(String(new Date().getDate()));
+  const [requestKey] = useState(() => "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const n = Math.floor(Math.random() * 16); return (c === "x" ? n : (n & 3) | 8).toString(16); }));
   const [saving, setSaving] = useState(false);
 
   const saveTransaction = async () => {
@@ -81,6 +88,7 @@ export default function AddTransactionScreen({
       return;
     }
 
+    if (monthly && (!/^\d{1,2}$/.test(paymentDay) || Number(paymentDay) < 1 || Number(paymentDay) > 31)) { Alert.alert("Payment day", "Choose a day from 1 to 31."); return; }
     setSaving(true);
 
     try {
@@ -93,7 +101,7 @@ export default function AddTransactionScreen({
       ].join("-");
 
       // Sent with the login token; the backend links it to this user
-      const response = await apiFetch(apiBaseUrl, "/transactions/", {
+      const response = await apiFetch(apiBaseUrl, monthly ? "/recurring/" : "/transactions/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -105,7 +113,7 @@ export default function AddTransactionScreen({
               ? customCategory.trim()
               : category,
           description: description.trim() || null,
-          date: localDate,
+          ...(monthly ? { day: Number(paymentDay), request_key: requestKey } : { date: localDate }),
         }),
       });
 
@@ -117,7 +125,7 @@ export default function AddTransactionScreen({
         return;
       }
 
-      Alert.alert("Success", "Transaction saved successfully!");
+      Alert.alert("Success", "Expense saved successfully!");
       onSaved();
     } catch (error) {
       // An expired session is handled by App, which returns to sign-in
@@ -133,23 +141,17 @@ export default function AddTransactionScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <StatusBar
         barStyle={mode === "dark" ? "light-content" : "dark-content"}
       />
 
       <AmbientBackground />
 
-      <ScrollView
+      <KeyboardFormScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <MetallicGlassButton
-          title="← Back"
-          variant="secondary"
-          onPress={onBack}
-          style={styles.backButton}
-        />
 
         <Text style={styles.title}>Add Transaction</Text>
         <Text style={styles.subtitle}>
@@ -226,6 +228,13 @@ export default function AddTransactionScreen({
             value={description}
             onChangeText={setDescription}
           />
+          <Text style={styles.label}>Repeat monthly</Text>
+          <Switch accessibilityLabel="Repeat expense monthly" value={monthly} onValueChange={setMonthly} trackColor={{ false: colors.border, true: colors.primary }} thumbColor={colors.surface} />
+          {monthly && <>
+            <Text style={styles.label}>Monthly payment day (1–31)</Text>
+            <TextInput style={styles.input} accessibilityLabel="Monthly payment day" value={paymentDay} onChangeText={setPaymentDay} keyboardType="number-pad" maxLength={2} />
+            <Text style={styles.label}>Today's expense is saved now. Monthly repeats start next month and automatically count as spent. Shorter months use their last day.</Text>
+          </>}
         </MetallicGlassCard>
 
         <MetallicGlassButton
@@ -233,7 +242,7 @@ export default function AddTransactionScreen({
           onPress={saveTransaction}
           disabled={saving}
         />
-      </ScrollView>
+      </KeyboardFormScrollView>
     </SafeAreaView>
   );
 }
