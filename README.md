@@ -239,7 +239,7 @@ Known limitations:
 5. Build Profile/Settings, notification preferences, reminder system and persistent theme choice.
 6. Add rate limiting, HTTPS deployment, token refresh/logout, and password reset.
 
-See `docs/DEVELOPER_HANDOFF.md` for an ordered development plan and troubleshooting.
+See [DEV_HANDOFF.md](DEV_HANDOFF.md) for the redesigned mobile UI, how it connects to the backend, how to run it, and known issues.
 
 ## Git hygiene
 

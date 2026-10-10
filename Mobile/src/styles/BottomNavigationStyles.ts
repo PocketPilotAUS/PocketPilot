@@ -8,5 +8,9 @@ export const createBottomNavigationStyles = (colors: AppColors) => StyleSheet.cr
   label: { color: colors.textMuted, fontSize: 10, fontWeight: "500", marginTop: 4 },
   activeLabel: { color: colors.text, fontWeight: "700" },
   add: { width: 42, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  // Prominent centre AI button (mint/teal), raised slightly above the bar
+  ai: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center", marginTop: -22, shadowColor: "#2CC9A6", shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  aiSelected: { borderWidth: 2, borderColor: colors.text },
+  aiLabel: { color: colors.text, fontWeight: "700" },
   indicator: { width: 12, height: 2, borderRadius: 1, marginTop: 4 },
 });

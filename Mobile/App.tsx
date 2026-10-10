@@ -1,11 +1,10 @@
-import IdealBudgetCard from "./src/components/IdealBudgetCard";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   StatusBar,
   TouchableOpacity,
-  ScrollView,
+  Pressable,
   Alert,
   ActivityIndicator,
 } from "react-native";
@@ -22,14 +21,16 @@ import {
 
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider } from "./src/theme/ThemeContext";
-import { Sun, Moon } from "lucide-react-native";
+import { Sun, Moon, LogOut, TriangleAlert } from "lucide-react-native";
 import KeyboardFormScrollView from "./src/components/KeyboardFormScrollView";
 import BottomNavigation, { AppTab } from "./src/components/BottomNavigation";
-import MonthlyIncomeCard, { MonthlyBudget } from "./src/components/MonthlyIncomeCard";
-import MetallicGlassCard from "./src/components/MetallicGlassCard";
 import AmbientBackground from "./src/components/AmbientBackground";
-import MetallicGlassButton from "./src/components/MetallicGlassButton";
 import AnimatedWelcome from "./src/components/AnimatedWelcome";
+import FinancialOverview from "./src/components/dashboard/FinancialOverview";
+import SpendingBreakdown from "./src/components/dashboard/SpendingBreakdown";
+import BudgetTracker from "./src/components/dashboard/BudgetTracker";
+import { useDashboardTheme } from "./src/components/dashboard/useDashboardTheme";
+import type { DashboardData } from "./src/utils/dashboard";
 
 import AIChatScreen, { ChatMessage } from "./src/screens/AIChatScreen";
 import AIInsightsScreen from "./src/screens/AIInsightsScreen";
@@ -42,6 +43,7 @@ import { useAppTheme } from "./src/theme/ThemeContext";
 function PocketPilotApp() {
   const { colors, mode, toggleTheme } = useAppTheme();
   const styles = createAppStyles(colors);
+  const dashboard = useDashboardTheme();
   type Screen =
     | "welcome"
     | "login"
@@ -83,11 +85,7 @@ function PocketPilotApp() {
 
   const API_BASE_URL = "http://192.168.1.185:8000";
 
-  type SpendingSummary = MonthlyBudget & {
-    total_spending: number;
-    category_spending: Record<string, number>;
-    category_percentages: Record<string, number>;
-  };
+  type SpendingSummary = DashboardData;
 
   const [spending, setSpending] = useState<SpendingSummary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -245,6 +243,7 @@ function PocketPilotApp() {
       <TransactionHistoryScreen
         apiBaseUrl={API_BASE_URL}
         onBack={() => setScreen("dashboard")}
+        onAddExpense={() => setScreen("addTransaction")}
       />
     );
   }
@@ -261,100 +260,72 @@ function PocketPilotApp() {
     );
   }
 
+  const firstName = currentUser?.name.trim().split(/\s+/)[0];
+
   return withNavigation(
-    <SafeAreaView
-      style={styles.container}
-      edges={["top", "left", "right"]}
-    >
+    <SafeAreaView style={dashboard.styles.screen} edges={["top", "left", "right"]}>
       <StatusBar
         barStyle={mode === "dark" ? "light-content" : "dark-content"}
       />
 
-      <AmbientBackground />
-
-      <KeyboardFormScrollView contentContainerStyle={styles.dashboard}>
-        {/* Dashboard header */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerText}>
-            <Text style={styles.greeting}>YOUR FINANCIAL OVERVIEW</Text>
-            <Text style={styles.heading}>Dashboard</Text>
+      <KeyboardFormScrollView contentContainerStyle={dashboard.styles.content}>
+        <View style={dashboard.styles.header}>
+          <View style={dashboard.styles.headerText}>
+            <Text style={dashboard.styles.eyebrow}>
+              {firstName ? `Hi, ${firstName}` : "Your finances"}
+            </Text>
+            <Text style={dashboard.styles.title}>Dashboard</Text>
           </View>
 
           <TouchableOpacity
-            style={styles.themeToggle}
+            style={dashboard.styles.iconButton}
             onPress={toggleTheme}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Toggle dark and light mode"
           >
             {mode === "dark" ? (
-              <Sun size={20} color={colors.text} strokeWidth={1.8} />
+              <Sun size={19} color={dashboard.palette.text} strokeWidth={1.8} />
             ) : (
-              <Moon size={20} color={colors.text} strokeWidth={1.8} />
+              <Moon size={19} color={dashboard.palette.text} strokeWidth={1.8} />
             )}
           </TouchableOpacity>
         </View>
 
-        {/* Spending overview */}
         {error ? (
-          <Text style={{ color: colors.error, marginBottom: 15 }}>{error}</Text>
+          <View style={dashboard.styles.errorBanner}>
+            <TriangleAlert size={16} color={dashboard.palette.danger} strokeWidth={2.2} />
+            <Text style={dashboard.styles.errorBannerText}>{error}</Text>
+          </View>
         ) : null}
 
-        <MonthlyIncomeCard budget={spending} loading={loading} apiBaseUrl={API_BASE_URL} onSaved={(budget) => setSpending(budget as SpendingSummary)} />
-        <IdealBudgetCard budget={spending} apiBaseUrl={API_BASE_URL} onSaved={(budget) => setSpending(budget as SpendingSummary)} />
+        <FinancialOverview
+          data={spending}
+          loading={loading}
+          apiBaseUrl={API_BASE_URL}
+          onSaved={setSpending}
+        />
 
-        {/* Spending categories */}
-        <Text style={styles.sectionTitle}>This Month by Category</Text>
+        <SpendingBreakdown
+          data={spending}
+          loading={loading}
+          onAddExpense={() => setScreen("addTransaction")}
+        />
 
-        <MetallicGlassCard>
-          {spending && Object.keys(spending.category_spending).length > 0 ? (
-            Object.entries(spending.category_spending).map(
-              ([category, amount]) => (
-                <View key={category} style={{ marginBottom: 18 }}>
-                  <View style={styles.categoryRow}>
-                    <Text style={styles.cardLabel}>{category}</Text>
-                    <Text style={styles.categoryAmount}>
-                      AED {amount.toFixed(2)}
-                    </Text>
-                  </View>
+        <BudgetTracker
+          data={spending}
+          apiBaseUrl={API_BASE_URL}
+          onSaved={setSpending}
+        />
 
-                  <View style={styles.progressTrack}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${Math.min(
-                            100,
-                            Math.max(
-                              0,
-                              spending.category_percentages[category] ?? 0,
-                            ),
-                          )}%`,
-                        },
-                      ]}
-                    />
-                  </View>
-
-                  <Text style={styles.cardHint}>
-                    {spending.category_percentages[category]}% of spending
-                  </Text>
-                </View>
-              ),
-            )
-          ) : (
-            <Text style={styles.emptyText}>
-              {loading ? "Loading categories..." : "No transactions yet."}
-            </Text>
-          )}
-        </MetallicGlassCard>
-
-        <View style={styles.logoutContainer}>
-          <MetallicGlassButton
-            title="Log Out"
-            variant="secondary"
-            onPress={handleLogout}
-          />
-        </View>
+        <Pressable
+          onPress={handleLogout}
+          style={({ pressed }) => [dashboard.styles.logoutButton, pressed && dashboard.styles.buttonDisabled]}
+          accessibilityRole="button"
+        >
+          <LogOut size={17} color={dashboard.palette.textSecondary} strokeWidth={2} />
+          <Text style={dashboard.styles.logoutText}>Log out</Text>
+        </Pressable>
       </KeyboardFormScrollView>
     </SafeAreaView>
   );
