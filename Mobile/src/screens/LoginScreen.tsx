@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react-native";
 
+import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
 import AmbientBackground from "../components/AmbientBackground";
 import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
@@ -82,7 +83,7 @@ export default function LoginScreen({
         style={styles.keyboardContainer}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
+        <KeyboardFormScrollView avoidKeyboard={false}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
@@ -213,7 +214,7 @@ export default function LoginScreen({
           <Text style={styles.demoNote}>
             Development build. Use test credentials only.
           </Text>
-        </ScrollView>
+        </KeyboardFormScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

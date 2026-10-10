@@ -10,6 +10,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import RecurringExpenses from "../components/RecurringExpenses";
+import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
 import AmbientBackground from "../components/AmbientBackground";
 import MetallicGlassCard from "../components/MetallicGlassCard";
 import MetallicGlassButton from "../components/MetallicGlassButton";
@@ -37,6 +39,7 @@ export default function TransactionHistoryScreen({
   const { colors, mode } = useAppTheme();
   const styles = createTransactionHistoryStyles(colors);
 
+  const [refresh, setRefresh] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -71,7 +74,7 @@ export default function TransactionHistoryScreen({
     };
 
     fetchTransactions();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, refresh]);
 
   const deleteTransaction = (id: number) => {
     Alert.alert(
@@ -123,20 +126,14 @@ export default function TransactionHistoryScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <StatusBar
         barStyle={mode === "dark" ? "light-content" : "dark-content"}
       />
 
       <AmbientBackground />
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <MetallicGlassButton
-          title="← Back to Dashboard"
-          variant="secondary"
-          onPress={onBack}
-          style={styles.backButton}
-        />
+      <KeyboardFormScrollView contentContainerStyle={styles.content}>
 
         <Text style={styles.title}>Transaction History</Text>
 
@@ -198,7 +195,8 @@ export default function TransactionHistoryScreen({
             </MetallicGlassCard>
           ))
         )}
-      </ScrollView>
+        <RecurringExpenses apiBaseUrl={apiBaseUrl} onChanged={() => setRefresh(value => value + 1)} />
+      </KeyboardFormScrollView>
     </SafeAreaView>
   );
 }

@@ -1,3 +1,4 @@
+import IdealBudgetCard from "./src/components/IdealBudgetCard";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -22,11 +23,16 @@ import {
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider } from "./src/theme/ThemeContext";
 import { Sun, Moon } from "lucide-react-native";
+import KeyboardFormScrollView from "./src/components/KeyboardFormScrollView";
+import BottomNavigation, { AppTab } from "./src/components/BottomNavigation";
+import MonthlyIncomeCard, { MonthlyBudget } from "./src/components/MonthlyIncomeCard";
 import MetallicGlassCard from "./src/components/MetallicGlassCard";
 import AmbientBackground from "./src/components/AmbientBackground";
 import MetallicGlassButton from "./src/components/MetallicGlassButton";
 import AnimatedWelcome from "./src/components/AnimatedWelcome";
 
+import AIChatScreen, { ChatMessage } from "./src/screens/AIChatScreen";
+import AIInsightsScreen from "./src/screens/AIInsightsScreen";
 import AddTransactionScreen from "./src/screens/AddTransactionScreen";
 import TransactionHistoryScreen from "./src/screens/TransactionHistoryScreen";
 
@@ -42,10 +48,14 @@ function PocketPilotApp() {
     | "register"
     | "dashboard"
     | "addTransaction"
-    | "history";
+    | "history"
+    | "aiInsights"
+    | "aiChat";
 
   const [screen, setScreen] = useState<Screen>("welcome");
   const screenRef = useRef<Screen>(screen);
+
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -62,6 +72,7 @@ function PocketPilotApp() {
   const handleLogout = async () => {
     try {
       await logout();
+      setChatMessages([]);
       setCurrentUser(null);
       setSpending(null);
       setScreen("welcome");
@@ -70,9 +81,9 @@ function PocketPilotApp() {
     }
   };
 
-  const API_BASE_URL = "http://192.168.1.15:8000";
+  const API_BASE_URL = "http://192.168.1.185:8000";
 
-  type SpendingSummary = {
+  type SpendingSummary = MonthlyBudget & {
     total_spending: number;
     category_spending: Record<string, number>;
     category_percentages: Record<string, number>;
@@ -109,13 +120,14 @@ function PocketPilotApp() {
   useEffect(() => {
     // Called when any request is rejected with 401 (expired or invalid token)
     setSessionExpiredHandler(() => {
-      const signedInScreens: Screen[] = ["dashboard", "addTransaction", "history"];
+      const signedInScreens: Screen[] = ["dashboard", "addTransaction", "history", "aiInsights", "aiChat"];
 
       // Ignore late responses once the user is already signed out
       if (!signedInScreens.includes(screenRef.current)) return;
 
       // Updated immediately so simultaneous 401s show only one alert
       screenRef.current = "login";
+      setChatMessages([]);
       setCurrentUser(null);
       setSpending(null);
       setScreen("login");
@@ -142,7 +154,8 @@ function PocketPilotApp() {
 
       try {
         // Summary of the logged-in user's transactions only
-        const response = await apiFetch(API_BASE_URL, "/spending/summary");
+        const now = new Date();
+        const response = await apiFetch(API_BASE_URL, `/budget/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
 
         if (!response.ok) {
           throw new Error("Failed to load spending data");
@@ -168,6 +181,12 @@ function PocketPilotApp() {
     };
   }, [screen]);
 
+  const withNavigation = (content: React.ReactNode) => (
+    <View style={styles.container}>
+      <View style={styles.container}>{content}</View>
+      <BottomNavigation active={screen as AppTab} onSelect={setScreen} />
+    </View>
+  );
   if (checkingSession) {
     return (
       <SafeAreaView style={styles.container}>
@@ -204,7 +223,7 @@ function PocketPilotApp() {
   }
 
   if (screen === "addTransaction") {
-    return (
+    return withNavigation(
       <AddTransactionScreen
         apiBaseUrl={API_BASE_URL}
         onBack={() => setScreen("dashboard")}
@@ -213,8 +232,16 @@ function PocketPilotApp() {
     );
   }
 
+  if (screen === "aiChat") {
+    return withNavigation(<AIChatScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} messages={chatMessages} onMessagesChange={setChatMessages} />);
+  }
+
+  if (screen === "aiInsights") {
+    return withNavigation(<AIInsightsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} />);
+  }
+
   if (screen === "history") {
-    return (
+    return withNavigation(
       <TransactionHistoryScreen
         apiBaseUrl={API_BASE_URL}
         onBack={() => setScreen("dashboard")}
@@ -234,10 +261,10 @@ function PocketPilotApp() {
     );
   }
 
-  return (
+  return withNavigation(
     <SafeAreaView
       style={styles.container}
-      edges={["top", "left", "right", "bottom"]}
+      edges={["top", "left", "right"]}
     >
       <StatusBar
         barStyle={mode === "dark" ? "light-content" : "dark-content"}
@@ -245,7 +272,7 @@ function PocketPilotApp() {
 
       <AmbientBackground />
 
-      <ScrollView contentContainerStyle={styles.dashboard}>
+      <KeyboardFormScrollView contentContainerStyle={styles.dashboard}>
         {/* Dashboard header */}
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
@@ -273,42 +300,11 @@ function PocketPilotApp() {
           <Text style={{ color: colors.error, marginBottom: 15 }}>{error}</Text>
         ) : null}
 
-        <MetallicGlassCard>
-          <Text style={styles.cardLabel}>TOTAL SPENDING</Text>
-
-          <Text style={styles.amount}>
-            {loading
-              ? "Loading..."
-              : spending
-                ? `AED ${spending.total_spending.toFixed(2)}`
-                : "AED 0.00"}
-          </Text>
-
-          <Text style={styles.cardHint}>All recorded expenses</Text>
-        </MetallicGlassCard>
-
-        {/* Quick actions */}
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-        <View style={styles.quickActions}>
-          <View style={styles.quickActionItem}>
-            <MetallicGlassButton
-              title="+ Add Transaction"
-              onPress={() => setScreen("addTransaction")}
-            />
-          </View>
-
-          <View style={styles.quickActionItem}>
-            <MetallicGlassButton
-              title="View History"
-              variant="secondary"
-              onPress={() => setScreen("history")}
-            />
-          </View>
-        </View>
+        <MonthlyIncomeCard budget={spending} loading={loading} apiBaseUrl={API_BASE_URL} onSaved={(budget) => setSpending(budget as SpendingSummary)} />
+        <IdealBudgetCard budget={spending} apiBaseUrl={API_BASE_URL} onSaved={(budget) => setSpending(budget as SpendingSummary)} />
 
         {/* Spending categories */}
-        <Text style={styles.sectionTitle}>Spending by Category</Text>
+        <Text style={styles.sectionTitle}>This Month by Category</Text>
 
         <MetallicGlassCard>
           {spending && Object.keys(spending.category_spending).length > 0 ? (
@@ -352,15 +348,6 @@ function PocketPilotApp() {
           )}
         </MetallicGlassCard>
 
-        {/* Insights */}
-        <Text style={styles.sectionTitle}>Financial Insights</Text>
-
-        <MetallicGlassCard>
-          <Text style={styles.emptyText}>
-            Your personalized recommendations will appear here.
-          </Text>
-        </MetallicGlassCard>
-
         <View style={styles.logoutContainer}>
           <MetallicGlassButton
             title="Log Out"
@@ -368,7 +355,7 @@ function PocketPilotApp() {
             onPress={handleLogout}
           />
         </View>
-      </ScrollView>
+      </KeyboardFormScrollView>
     </SafeAreaView>
   );
 }

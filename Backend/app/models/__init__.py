@@ -5,3 +5,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 
 __all__ = ["Transaction", "User"]
+from app.models.income import MonthlyIncome
+from app.models.chat_proposal import ChatProposal
+from app.models.recurring import RecurringExpense, RecurringOccurrence
+from app.models.budget_plan import BudgetPlan
