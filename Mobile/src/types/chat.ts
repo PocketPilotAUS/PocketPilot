@@ -1,3 +1,4 @@
+import type { FinancialPlan, PlanningProfile } from "./plans";
 // AI Chat types (same shapes as the /ai/chat and /ai/proposals API)
 
 export type Proposal = {
@@ -15,4 +16,6 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   proposal?: Proposal;
+  plan?: FinancialPlan;
+  planningProfile?: PlanningProfile;
 };

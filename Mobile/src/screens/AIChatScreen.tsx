@@ -1,3 +1,5 @@
+import type { PlanningProfile } from "../types/plans";
+import FinancialPlanCard from "../components/ai/FinancialPlanCard";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -24,33 +26,33 @@ import type { ChatMessage, Proposal } from "../types/chat";
 
 export type { ChatMessage } from "../types/chat";
 
+import type useChatSession from "../hooks/useChatSession";
+
 type Props = {
   apiBaseUrl: string;
   onBack: () => void;
-  messages: ChatMessage[];
-  onMessagesChange: (messages: ChatMessage[]) => void;
+  session: ReturnType<typeof useChatSession>;
 };
 
 type Section = "chat" | "plans";
 
-type ChatError = { title: string; message: string; retry: boolean };
 
 const GOAL_PROMPT = "Help me plan how to save for a goal by a specific date.";
 
-export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }: Props) {
+export default function AIChatScreen({ apiBaseUrl, session }: Props) {
+  const { messages, onMessagesChange, draft, setDraft, busy, pendingQuestion, error, setError } = session;
+  const send = (question = draft) => {
+    if (proposalLock.current || session.savingPlan !== null) return;
+    return session.send(question);
+  };
   const { ai, styles, palette, mode } = useAITheme();
 
+  const [reviewProfile, setReviewProfile] = useState<PlanningProfile | undefined>(undefined);
   const [section, setSection] = useState<Section>("chat");
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
-  const [error, setError] = useState<ChatError | null>(null);
   const [savingProposal, setSavingProposal] = useState<string | null>(null);
 
   const proposalLock = useRef(false);
-  const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
-  const sending = useRef(false);
   const scroll = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -58,97 +60,12 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
 
     return () => {
       mounted.current = false;
-      controller.current?.abort();
     };
   }, []);
 
-  // Same request as before: recent history (within the backend's limits),
-  // with each record's status attached for the AI's context
-  const send = async (question = draft) => {
-    if (sending.current || proposalLock.current || !question.trim()) return;
-
-    sending.current = true;
-    setBusy(true);
-    setError(null);
-    setPendingQuestion(question.trim());
-    setDraft("");
-
-    const request = new AbortController();
-    controller.current = request;
-    const timeout = setTimeout(() => request.abort(), 200000);
-
-    // Keep complete user/assistant pairs within the backend's context limit.
-    let history = messages.slice(-20);
-    while (history.reduce((sum, item) => sum + item.content.length, 0) + question.trim().length > 24000) {
-      history = history.slice(2);
-    }
-
-    const pending: ChatMessage = { role: "user", content: question.trim() };
-
-    try {
-      const response = await apiFetch(apiBaseUrl, "/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [...history, pending].map(({ role, content, ...rest }) => ({
-            role,
-            content: content + (rest.proposal ? `\n[Record status: ${rest.proposal.status}; details: ${JSON.stringify(rest.proposal)}]` : ""),
-          })),
-        }),
-        signal: request.signal,
-      });
-
-      if (!response.ok) {
-        const failure: { detail?: string } = await response.json().catch(() => ({}));
-        const detail = typeof failure.detail === "string" ? failure.detail : "Could not send your message. Please try again.";
-
-        throw Object.assign(new Error(detail), { status: response.status });
-      }
-
-      const data: { reply: string; proposal?: Proposal | null } = await response.json();
-
-      if (typeof data.reply !== "string" || !data.reply.trim()) {
-        throw Object.assign(new Error("Could not send your message. Please try again."), { status: 0 });
-      }
-
-      if (mounted.current) {
-        onMessagesChange([...messages, pending, { role: "assistant", content: data.reply, proposal: data.proposal ?? undefined }]);
-      }
-    } catch (err) {
-      if (!mounted.current || err instanceof SessionExpiredError) return;
-
-      // The message is put back in the box so it can be retried
-      setDraft(question);
-
-      const status = (err as { status?: number }).status;
-
-      if (request.signal.aborted) {
-        setError({ title: "The reply took too long", message: "Your message is kept below so you can try again.", retry: true });
-      } else if (status === 503) {
-        setError({
-          title: "AI Chat is unavailable right now",
-          message: "PocketPilot's AI service isn't responding on the server. Your message is kept below; try again later.",
-          retry: true,
-        });
-      } else if (status !== undefined) {
-        setError({ title: "Message not sent", message: (err as Error).message, retry: true });
-      } else {
-        setError({ title: "Couldn't reach PocketPilot", message: "Check your connection. Your message is kept below so you can try again.", retry: true });
-      }
-    } finally {
-      clearTimeout(timeout);
-      sending.current = false;
-
-      if (mounted.current) {
-        setBusy(false);
-        setPendingQuestion(null);
-      }
-    }
-  };
-
   // Confirms or dismisses an expense/income the AI proposed (unchanged API)
   const handleProposal = async (id: string, operation: "confirm" | "dismiss") => {
-    if (proposalLock.current || busy) return;
+    if (proposalLock.current || busy || session.savingPlan !== null) return;
 
     proposalLock.current = true;
     setSavingProposal(id);
@@ -184,9 +101,8 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
         text: "New chat",
         style: "destructive",
         onPress: () => {
-          onMessagesChange([]);
-          setError(null);
-          setDraft("");
+          if (busy || proposalLock.current || session.savingPlan !== null) return;
+          session.reset();
         },
       },
     ]);
@@ -197,7 +113,7 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
     setDraft(GOAL_PROMPT);
   };
 
-  const canSend = !busy && savingProposal === null && draft.trim().length > 0;
+  const canSend = !busy && session.savingPlan === null && savingProposal === null && draft.trim().length > 0;
   const showWelcome = messages.length === 0 && pendingQuestion === null;
 
   const renderMessage = (message: ChatMessage, index: number) => {
@@ -220,11 +136,13 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
         </View>
         <View style={[ai.bubble, ai.assistantBubble]}>
           <FormattedMessage content={message.content} />
+          {message.planningProfile && <Pressable onPress={() => { setReviewProfile(message.planningProfile); setSection("plans"); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
+          {message.plan && <FinancialPlanCard plan={message.plan} busy={busy || session.savingPlan !== null} onSave={!message.plan.id ? () => { void session.saveFinancialPlan(message.plan!, index); } : undefined} />}
           {proposal && (
             <ProposalCard
               proposal={proposal}
               saving={savingProposal === proposal.id}
-              disabled={busy || savingProposal !== null}
+              disabled={busy || savingProposal !== null || session.savingPlan !== null}
               onConfirm={() => { void handleProposal(proposal.id, "confirm"); }}
               onDismiss={() => { void handleProposal(proposal.id, "dismiss"); }}
             />
@@ -271,7 +189,7 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
           {section === "chat" && messages.length > 0 && (
             <Pressable
               onPress={startNewChat}
-              disabled={busy || savingProposal !== null}
+              disabled={busy || savingProposal !== null || session.savingPlan !== null}
               style={({ pressed }) => [ai.newChat, (pressed || busy) && styles.buttonDisabled]}
               accessibilityRole="button"
               accessibilityLabel="Start a new chat"
@@ -292,7 +210,7 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
             return (
               <Pressable
                 key={key}
-                onPress={() => setSection(key)}
+                onPress={() => { if (key === "plans") setReviewProfile(undefined); setSection(key); }}
                 style={[ai.segment, active && ai.segmentActive]}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: active }}
@@ -308,8 +226,8 @@ export default function AIChatScreen({ apiBaseUrl, messages, onMessagesChange }:
       </View>
 
       {section === "plans" ? (
-        // No plan storage exists yet, so there are never any plans to show
-        <FinancialPlans plans={[]} onStartPlanning={startPlanning} />
+        // Saved plans and the guided form share the confirmed planning profile.
+        <FinancialPlans apiBaseUrl={apiBaseUrl} initialProfile={reviewProfile} onPreview={session.addPlanPreview} onStartPlanning={startPlanning} />
       ) : (
         <KeyboardAvoidingView style={ai.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <ScrollView

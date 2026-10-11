@@ -1,3 +1,4 @@
+import useChatSession from "./src/hooks/useChatSession";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -32,7 +33,7 @@ import BudgetTracker from "./src/components/dashboard/BudgetTracker";
 import { useDashboardTheme } from "./src/components/dashboard/useDashboardTheme";
 import type { DashboardData } from "./src/utils/dashboard";
 
-import AIChatScreen, { ChatMessage } from "./src/screens/AIChatScreen";
+import AIChatScreen from "./src/screens/AIChatScreen";
 import AIInsightsScreen from "./src/screens/AIInsightsScreen";
 import AddTransactionScreen from "./src/screens/AddTransactionScreen";
 import TransactionHistoryScreen from "./src/screens/TransactionHistoryScreen";
@@ -57,7 +58,8 @@ function PocketPilotApp() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const screenRef = useRef<Screen>(screen);
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const API_BASE_URL = "http://192.168.1.241:8000";
+  const chatSession = useChatSession(API_BASE_URL);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -74,7 +76,7 @@ function PocketPilotApp() {
   const handleLogout = async () => {
     try {
       await logout();
-      setChatMessages([]);
+      chatSession.reset();
       setCurrentUser(null);
       setSpending(null);
       setScreen("welcome");
@@ -83,7 +85,7 @@ function PocketPilotApp() {
     }
   };
 
-  const API_BASE_URL = "http://192.168.1.185:8000";
+
 
   type SpendingSummary = DashboardData;
 
@@ -125,7 +127,7 @@ function PocketPilotApp() {
 
       // Updated immediately so simultaneous 401s show only one alert
       screenRef.current = "login";
-      setChatMessages([]);
+      chatSession.reset();
       setCurrentUser(null);
       setSpending(null);
       setScreen("login");
@@ -231,7 +233,7 @@ function PocketPilotApp() {
   }
 
   if (screen === "aiChat") {
-    return withNavigation(<AIChatScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} messages={chatMessages} onMessagesChange={setChatMessages} />);
+    return withNavigation(<AIChatScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} session={chatSession} />);
   }
 
   if (screen === "aiInsights") {

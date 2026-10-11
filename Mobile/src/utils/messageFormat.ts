@@ -9,21 +9,23 @@ export type MessageBlock =
   | { kind: "bullet"; segments: InlineSegment[] }
   | { kind: "numbered"; marker: string; segments: InlineSegment[] };
 
-// **bold** spans; unmatched asterisks are kept as written
+// Support model-generated bold markers, including escaped/triple markers.
+// Incomplete double markers should not leak into conversational display.
 export function parseInline(text: string): InlineSegment[] {
+  text = text.replace(/\\\*/g, "*");
   const segments: InlineSegment[] = [];
-  const pattern = /\*\*([^*]+?)\*\*/g;
+  const pattern = /\*{2,3}([^*]+?)\*{2,3}/g;
   let last = 0;
 
   for (const match of text.matchAll(pattern)) {
-    if (match.index > last) segments.push({ text: text.slice(last, match.index), bold: false });
+    if (match.index > last) segments.push({ text: text.slice(last, match.index).replace(/\*{2,}/g, ""), bold: false });
     segments.push({ text: match[1], bold: true });
     last = match.index + match[0].length;
   }
 
-  if (last < text.length) segments.push({ text: text.slice(last), bold: false });
+  if (last < text.length) segments.push({ text: text.slice(last).replace(/\*{2,}/g, ""), bold: false });
 
-  return segments.length ? segments : [{ text, bold: false }];
+  return segments.length ? segments : [{ text: text.replace(/\*{2,}/g, ""), bold: false }];
 }
 
 export function parseMessage(content: string): MessageBlock[] {

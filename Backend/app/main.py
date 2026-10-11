@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import ConfigurationError
 from app.database import MAX_DATABASE_ID, get_db
 from app.dependencies import CurrentUser
-from app.routers import auth, chat, budget, proposals, recurring
+from app.routers import auth, chat, budget, proposals, recurring, planning
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionResponse
@@ -39,6 +39,7 @@ app.include_router(chat.router)
 app.include_router(budget.router)
 app.include_router(proposals.router)
 app.include_router(recurring.router)
+app.include_router(planning.router)
 
 
 @app.exception_handler(ConfigurationError)

@@ -9,3 +9,5 @@ from app.models.income import MonthlyIncome
 from app.models.chat_proposal import ChatProposal
 from app.models.recurring import RecurringExpense, RecurringOccurrence
 from app.models.budget_plan import BudgetPlan
+
+from app.models.financial_plan import PlanningProfile, FinancialPlan

@@ -1,127 +1,47 @@
-import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { CalendarClock, ChartLine, MessageCircle, Scissors, Target } from "lucide-react-native";
-
+import React, { useEffect, useState } from "react";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useAITheme } from "./useAITheme";
-import type { FinancialPlan } from "../../types/plans";
-import { formatAED, formatPercent } from "../../utils/dashboard";
-import { formatShortDate } from "../../utils/transactions";
+import { createPlanningStyles } from "../../styles/PlanningStyles";
+import FinancialPlanCard from "./FinancialPlanCard";
+import PlanningForm from "./PlanningForm";
+import { FinancialPlan, PlanningContext, PlanningProfile } from "../../types/plans";
+import { getPlanningContext, getPlans, planningRequest, savePlan } from "../../services/planningService";
+import { SessionExpiredError } from "../../services/apiClient";
 
-const FEATURES = [
-  { title: "Savings targets", description: "Set how much you want to save, from an emergency fund to a holiday.", Icon: Target },
-  { title: "Deadlines", description: "Choose a date and see the monthly amount needed to get there.", Icon: CalendarClock },
-  { title: "Suggested spending cuts", description: "Keep the cuts PocketPilot suggests based on your spending.", Icon: Scissors },
-  { title: "Progress", description: "Follow how close you are to each goal over time.", Icon: ChartLine },
-];
-
-type Props = {
-  plans: FinancialPlan[];
-  onStartPlanning: () => void;
-};
-
-function PlanCard({ plan }: { plan: FinancialPlan }) {
-  const { ai, styles } = useAITheme();
-  const progress = plan.targetAmount > 0 ? Math.min(100, (plan.savedAmount / plan.targetAmount) * 100) : 0;
-
-  return (
-    <View style={styles.card}>
-      <Text style={ai.planTitle}>{plan.title}</Text>
-      <Text style={styles.cardSubtitle}>
-        {formatAED(plan.savedAmount)} of {formatAED(plan.targetAmount)}
-      </Text>
-
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progress}%` }]} />
-      </View>
-      <Text style={styles.progressCaption}>{formatPercent(progress)} complete</Text>
-
-      <View style={ai.planMeta}>
-        {plan.deadline && (
-          <View style={ai.planTag}>
-            <Text style={ai.planTagText}>By {formatShortDate(plan.deadline)}</Text>
-          </View>
-        )}
-        {plan.monthlyContribution !== null && (
-          <View style={ai.planTag}>
-            <Text style={ai.planTagText}>{formatAED(plan.monthlyContribution)} / month</Text>
-          </View>
-        )}
-      </View>
-
-      {plan.spendingCuts.map((cut) => (
-        <View key={cut.category} style={ai.planCut}>
-          <Text style={styles.mutedText}>Cut {cut.category}</Text>
-          <Text style={styles.mutedText}>{formatAED(cut.monthlyAmount)} / month</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-export default function FinancialPlans({ plans, onStartPlanning }: Props) {
-  const { ai, styles, palette, mode } = useAITheme();
-
-  if (plans.length > 0) {
-    return (
-      <ScrollView contentContainerStyle={ai.plansContent}>
-        {plans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} />
-        ))}
-      </ScrollView>
-    );
-  }
-
-  return (
-    <ScrollView contentContainerStyle={ai.plansContent}>
-      <View style={styles.card}>
-        <View style={ai.plansHero}>
-          <LinearGradient
-            colors={mode === "dark" ? ["#5FF0CE", "#1FA88A"] : ["#2CC9A6", "#0B8A71"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={ai.orb}
-          >
-            <Target size={28} color={palette.onAccent} strokeWidth={2.2} />
-          </LinearGradient>
-
-          <View style={ai.comingSoon}>
-            <Text style={ai.comingSoonText}>Coming soon</Text>
-          </View>
-
-          <Text style={ai.welcomeTitle}>No financial plans yet</Text>
-          <Text style={ai.welcomeText}>
-            Soon youâ€™ll be able to save plans from AI Chat and track your financial goals here.
-          </Text>
-        </View>
-
-        <View style={ai.featureList}>
-          {FEATURES.map(({ title, description, Icon }) => (
-            <View key={title} style={ai.featureRow}>
-              <View style={ai.featureIcon}>
-                <Icon size={17} color={palette.accent} strokeWidth={2.2} />
-              </View>
-              <View style={ai.featureText}>
-                <Text style={ai.featureTitle}>{title}</Text>
-                <Text style={ai.featureDescription}>{description}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      <Text style={[styles.mutedText, ai.plansHint]}>
-        In the meantime, AI Chat can help you work out a plan.
-      </Text>
-
-      <Pressable
-        onPress={onStartPlanning}
-        style={({ pressed }) => [styles.emptyButton, ai.centered, pressed && styles.buttonDisabled]}
-        accessibilityRole="button"
-      >
-        <MessageCircle size={16} color={palette.onAccent} strokeWidth={2.4} />
-        <Text style={styles.emptyButtonText}>Plan a goal in AI Chat</Text>
-      </Pressable>
-    </ScrollView>
-  );
+type Props = { apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onStartPlanning: () => void; initialProfile?: PlanningProfile };
+export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning, initialProfile }: Props) {
+ const { palette } = useAITheme(); const s = createPlanningStyles(palette);
+ const [plans, setPlans] = useState<FinancialPlan[]>([]);
+ const [context, setContext] = useState<PlanningContext | null>(null);
+ const [editing, setEditing] = useState<{ profile?: PlanningProfile; id?: string } | null>(initialProfile ? { profile: initialProfile } : null);
+ const [preview, setPreview] = useState<FinancialPlan | null>(null);
+ const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
+ useEffect(() => {
+  let cancelled = false; setBusy(true); setError("");
+  Promise.all([getPlans(apiBaseUrl), getPlanningContext(apiBaseUrl)]).then(([rows, data]) => { if (!cancelled) { setPlans(rows); setContext(data); } }).catch(err => { if (!cancelled && !(err instanceof SessionExpiredError)) setError(err.message); }).finally(() => { if (!cancelled) setBusy(false); });
+  return () => { cancelled = true; };
+ }, [apiBaseUrl, revision]);
+ const save = async () => {
+  if (!preview || busy) return; setBusy(true); setError("");
+  try { const saved = await savePlan(apiBaseUrl, preview.profile, editing?.id); onPreview(saved); setPlans(rows => [...rows.filter(row => row.id !== saved.id), saved]); setEditing(null); setPreview(null); setRevision(n => n + 1); }
+  catch (err) { if (!(err instanceof SessionExpiredError)) setError((err as Error).message); }
+  finally { setBusy(false); }
+ };
+ const remove = (id: string) => Alert.alert("Delete this plan?", "Recorded expenses and income will remain.", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
+  if (busy) return; setBusy(true);
+  planningRequest(apiBaseUrl, `/plans/${id}`, "DELETE").then(() => setPlans(rows => rows.filter(row => row.id !== id))).catch(err => { if (!(err instanceof SessionExpiredError)) setError(err.message); }).finally(() => setBusy(false));
+ } }]);
+ if (editing && context && !preview) return <PlanningForm apiBaseUrl={apiBaseUrl} context={context} initial={editing.profile} onCancel={() => setEditing(null)} onPreview={plan => { setPreview(plan); onPreview(plan); }} />;
+ return <ScrollView contentContainerStyle={s.content}>
+  {!!error && <Text style={s.error}>{error}</Text>}
+  {preview ? <><FinancialPlanCard plan={preview} busy={busy} onSave={() => { void save(); }} /><Pressable style={[s.button, s.secondary]} disabled={busy} onPress={() => { setEditing(current => ({ ...current, profile: preview.profile })); setPreview(null); }}><Text style={s.secondaryText}>Adjust Details</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditing(null); setPreview(null); }}><Text style={s.text}>Back to plans</Text></Pressable></> : <>
+   <View style={s.card}><Text style={s.title}>My Financial Plans</Text><Text style={s.text}>Build a plan around your household, spending history and main goal. Review suggested cuts before deciding what works for you.</Text>
+    <Pressable disabled={busy || !context} style={[s.button, (busy || !context) && s.muted]} onPress={() => setEditing({})}><Text style={s.buttonText}>{busy ? "Loading…" : "Create a Plan"}</Text></Pressable>
+    <Pressable style={[s.button, s.secondary]} onPress={onStartPlanning}><Text style={s.secondaryText}>Plan with AI Chat</Text></Pressable>
+    {!!error && <Pressable onPress={() => setRevision(n => n + 1)}><Text style={s.text}>Retry loading</Text></Pressable>}
+   </View>
+   {plans.map(plan => <FinancialPlanCard key={plan.id} plan={plan} busy={busy} onEdit={() => setEditing({ profile: plan.profile, id: plan.id })} onDelete={() => remove(plan.id!)} />)}
+   {!busy && !plans.length && <Text style={s.text}>No saved plans yet. Create one here or save a draft from chat.</Text>}
+  </>}
+ </ScrollView>;
 }

@@ -1,18 +1,18 @@
-// Shape for structured financial plans, ready for when plans can be saved.
-// The app has no plan storage yet, so no plans exist and none are invented.
-
-export type PlanSpendingCut = {
-  category: string;
-  monthlyAmount: number; // AED per month
+export const PLAN_CATEGORIES = ["Rent", "Food", "Transport", "Bills", "Debt payments", "Entertainment", "Shopping", "Subscriptions", "Other"] as const;
+export type PlanningProfile = {
+ income: number | string | null; other_income: number | string | null; household_size: number | null;
+ goal: string | null; goal_kind: "savings" | "debt" | "spending" | null;
+ target_amount: number | string | null; current_amount: number | string | null; deadline: string | null;
+ typical_months: string[]; expenses: Record<string, number | string | null>; protected_categories: string[];
 };
-
 export type FinancialPlan = {
-  id: string;
-  title: string;
-  kind: "savings" | "debt" | "spending";
-  targetAmount: number; // AED
-  savedAmount: number; // AED recorded towards the target
-  deadline: string | null; // YYYY-MM-DD
-  monthlyContribution: number | null; // AED per month
-  spendingCuts: PlanSpendingCut[];
+ id?: string; ready: boolean; title: string; kind: string; profile: PlanningProfile;
+ income: number; baselineSpending: number; availableBefore: number; availableAfter: number;
+ requiredMonthly: number; monthlyContribution: number; unfundedMonthly: number; feasible: boolean;
+ targetAmount: number; savedAmount: number; deadline: string | null; months: number | null;
+ allocations: { category: string; baseline: number; target: number; source: string }[];
+ spendingCuts: { category: string; monthlyAmount: number; reason: string }[];
+ historyComparisons: { category: string; historicalMonthly: number; plannedMonthly: number; difference: number }[];
+ historyAdvice: string[]; warnings: string[]; assumptions: string[];
 };
+export type PlanningContext = { profile: Partial<PlanningProfile>; current_income: number | null; past_months: Record<string, Record<string, number>>; recurring_obligations: Record<string, number> };

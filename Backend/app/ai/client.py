@@ -57,13 +57,28 @@ def generate_ai_explanation(prompt):
 
 
 def generate_chat_reply(messages):
+    from app.schemas.planning import PlanningInput, CATEGORIES
+    profile_schema = PlanningInput.model_json_schema()
+    # Constrain category labels at generation time instead of allowing arbitrary keys
+    # that the profile validator must reject afterwards.
+    profile_schema["properties"]["expenses"] = {
+        "type": "object", "properties": {category: {"type": ["number", "null"], "minimum": 0, "maximum": 1000000000} for category in CATEGORIES},
+        "additionalProperties": False,
+        "description": "Only explicitly supplied monthly baseline costs; omit unknown categories."
+    }
+    profile_schema["properties"]["protected_categories"] = {
+        "type": "array", "items": {"type": "string", "enum": list(CATEGORIES)},
+        "description": "Only categories the user explicitly says must not be reduced."
+    }
     return generate_answer(messages, {
+        "$defs": profile_schema.pop("$defs", {}),
         "type": "object", "properties": {
             "reply": {"type": "string", "minLength": 1},
+            "planning": {"anyOf": [{"type": "null"}, profile_schema]},
             "action": {"anyOf": [{"type": "null"}, {"type": "object", "properties": {
                 "kind": {"enum": ["expense", "income"]}, "amount": {"type": "number"},
                 "category": {"type": "string"}, "date": {"type": "string"},
                 "year": {"type": "integer"}, "month": {"type": "integer"}
             }, "required": ["kind", "amount"], "additionalProperties": False}]}
-        }, "required": ["reply", "action"], "additionalProperties": False
+        }, "required": ["reply", "action", "planning"], "additionalProperties": False
     })
