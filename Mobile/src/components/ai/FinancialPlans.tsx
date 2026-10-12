@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView } from "react-native";
+import { Alert, Text, View } from "../../preferences/LocalizedNative";
 import { useAITheme } from "./useAITheme";
 import { createPlanningStyles } from "../../styles/PlanningStyles";
 import FinancialPlanCard from "./FinancialPlanCard";
@@ -36,7 +37,7 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
   {!!error && <Text style={s.error}>{error}</Text>}
   {preview ? <><FinancialPlanCard plan={preview} busy={busy} onSave={() => { void save(); }} /><Pressable style={[s.button, s.secondary]} disabled={busy} onPress={() => { setEditing(current => ({ ...current, profile: preview.profile })); setPreview(null); }}><Text style={s.secondaryText}>Adjust Details</Text></Pressable><Pressable disabled={busy} onPress={() => { setEditing(null); setPreview(null); }}><Text style={s.text}>Back to plans</Text></Pressable></> : <>
    <View style={s.card}><Text style={s.title}>My Financial Plans</Text><Text style={s.text}>Build a plan around your household, spending history and main goal. Review suggested cuts before deciding what works for you.</Text>
-    <Pressable disabled={busy || !context} style={[s.button, (busy || !context) && s.muted]} onPress={() => setEditing({})}><Text style={s.buttonText}>{busy ? "Loading…" : "Create a Plan"}</Text></Pressable>
+    <Pressable disabled={busy || !context} style={[s.button, (busy || !context) && s.muted]} onPress={() => setEditing({})}><Text style={s.buttonText}>{busy ? "Loadingï¿½" : "Create a Plan"}</Text></Pressable>
     <Pressable style={[s.button, s.secondary]} onPress={onStartPlanning}><Text style={s.secondaryText}>Plan with AI Chat</Text></Pressable>
     {!!error && <Pressable onPress={() => setRevision(n => n + 1)}><Text style={s.text}>Retry loading</Text></Pressable>}
    </View>

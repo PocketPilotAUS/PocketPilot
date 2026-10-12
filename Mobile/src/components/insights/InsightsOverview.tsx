@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
 
 import { useInsightsTheme } from "./useInsightsTheme";
 import { DashboardData, formatAED, formatPercent, monthName } from "../../utils/dashboard";

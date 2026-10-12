@@ -3,6 +3,7 @@ import type { FinancialPlan, PlanningProfile } from "../types/plans";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
 import type { ChatMessage, Proposal } from "../types/chat";
+import { getRuntimeLanguage } from "../preferences/localize";
 export type ChatError = { title: string; message: string; retry: boolean };
 
 // Owned by the app, not the tab: navigation must not cancel an active reply.
@@ -31,7 +32,7 @@ export default function useChatSession(apiBaseUrl: string) {
   }, []);
   // Same request as before: recent history (within the backend's limits),
   // with each record's status attached for the AI's context
-  const send = async (question: string) => {
+  const send = async (question: string, reviewBudget?: { year: number; month: number }) => {
     if (sending.current || planLock.current || !question.trim()) return;
 
     if (question.trim().length > 16000) {
@@ -62,6 +63,8 @@ export default function useChatSession(apiBaseUrl: string) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          language: getRuntimeLanguage(),
+          ...(reviewBudget ? { review_budget: reviewBudget } : {}),
           planning_profile: [...messages].reverse().find(message => message.planningProfile || message.plan)?.planningProfile ?? [...messages].reverse().find(message => message.planningProfile || message.plan)?.plan?.profile,
           messages: [...history, pending].map(({ role, content, ...rest }) => ({
             role,

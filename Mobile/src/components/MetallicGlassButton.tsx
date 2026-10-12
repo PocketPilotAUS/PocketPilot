@@ -1,12 +1,7 @@
 
 import React from "react";
-import {
-  Text,
-  Pressable,
-  StyleSheet,
-  StyleProp,
-  ViewStyle,
-} from "react-native";
+import { Pressable, StyleSheet, StyleProp, ViewStyle } from "react-native";
+import { Text } from "../preferences/LocalizedNative";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useAppTheme } from "../theme/ThemeContext";

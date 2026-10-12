@@ -7,10 +7,12 @@ def test_ideal_budget_targets_customization_and_actuals(api_client):
     headers = auth_headers(login_user(api_client).json()['access_token'])
     url = '?year=2026&month=10'
     empty = api_client.get('/budget/monthly' + url, headers=headers).json()
-    assert all(row['target'] is None for row in empty['ideal_budget']['allocations'])
+    assert empty['ideal_budget'] is None
     api_client.post('/transactions/', headers=headers, json={'amount': 2500, 'category': 'Rent', 'date': '2026-10-01'})
     api_client.post('/transactions/', headers=headers, json={'amount': 80, 'category': 'Groceries', 'date': '2026-10-01'})
     result = api_client.put('/budget/income' + url, headers=headers, json={'amount': 8500}).json()
+    assert result['ideal_budget'] is None
+    result = api_client.put('/budget/plan' + url, headers=headers, json={'percentages': DEFAULT_PERCENTAGES}).json()
     rows = {row['category']: row for row in result['ideal_budget']['allocations']}
     assert rows['Rent']['target'] == 2550
     assert rows['Rent']['spent'] == 2500
@@ -21,10 +23,10 @@ def test_ideal_budget_targets_customization_and_actuals(api_client):
     assert saved.status_code == 200
     assert saved.json()['ideal_budget']['customized'] is True
     assert saved.json()['ideal_budget']['allocations'][0]['target'] == 2975
-    assert api_client.get('/budget/monthly?year=2026&month=11', headers=headers).json()['ideal_budget']['customized'] is False
+    assert api_client.get('/budget/monthly?year=2026&month=11', headers=headers).json()['ideal_budget'] is None
     register_user(api_client, email='other@example.com')
     other = auth_headers(login_user(api_client, email='other@example.com').json()['access_token'])
-    assert api_client.get('/budget/monthly' + url, headers=other).json()['ideal_budget']['customized'] is False
+    assert api_client.get('/budget/monthly' + url, headers=other).json()['ideal_budget'] is None
     percentages['Rent'] = 36
     assert api_client.put('/budget/plan' + url, headers=headers, json={'percentages': percentages}).status_code == 422
     percentages['Rent'] = True

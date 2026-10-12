@@ -1,13 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  RefreshControl,
-  StatusBar,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, RefreshControl, StatusBar } from "react-native";
+import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Inbox, Plus, RefreshCw, Search, SearchX, TriangleAlert, X } from "lucide-react-native";
 
@@ -32,11 +25,11 @@ import {
 
 type Props = {
   apiBaseUrl: string;
-  onBack: () => void;
+  refreshKey?: number;
   onAddExpense?: () => void;
 };
 
-export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense }: Props) {
+export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, refreshKey = 0 }: Props) {
   const { styles, tx, palette, mode } = useTransactionsTheme();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -49,6 +42,12 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense }: P
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    // Keep newly saved expenses visible even after a filtered search.
+    setFilters(DEFAULT_FILTERS);
+    setSelected(null);
+  }, [refreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -86,7 +85,7 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense }: P
     return () => {
       active = false;
     };
-  }, [apiBaseUrl, reload]);
+  }, [apiBaseUrl, reload, refreshKey]);
 
   const refresh = useCallback(() => {
     setRefreshing(true);
@@ -253,6 +252,11 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense }: P
           </View>
         </View>
 
+        {onAddExpense && <Pressable onPress={onAddExpense} style={tx.addButton} accessibilityRole="button" accessibilityLabel="Add transaction">
+          <Plus size={19} color={palette.onAccent} strokeWidth={2.4} />
+          <Text style={tx.addButtonText}>Add transaction</Text>
+        </Pressable>}
+
         {/* Summary for the current search and filters */}
         <View style={styles.card}>
           <View style={tx.summaryRow}>
@@ -317,7 +321,7 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense }: P
 
         {/* Recurring expense schedules (unchanged feature) */}
         <View style={tx.recurringSection}>
-          <RecurringExpenses apiBaseUrl={apiBaseUrl} onChanged={() => setReload((value) => value + 1)} />
+          <RecurringExpenses key={refreshKey} apiBaseUrl={apiBaseUrl} onChanged={() => setReload((value) => value + 1)} />
         </View>
       </KeyboardFormScrollView>
 

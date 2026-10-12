@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView } from "react-native";
+import { Text, TextInput, View } from "../../preferences/LocalizedNative";
 import { ArrowUpDown, CalendarDays, Check, ChevronDown, Layers, RotateCcw, Wallet } from "lucide-react-native";
 
 import BottomSheet from "./BottomSheet";

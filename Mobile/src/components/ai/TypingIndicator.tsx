@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Animated, View } from "react-native";
+import { Animated } from "react-native";
+import { View } from "../../preferences/LocalizedNative";
 
 import { useAITheme } from "./useAITheme";
 

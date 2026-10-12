@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "../preferences/LocalizedNative";
 import MetallicGlassCard from "./MetallicGlassCard";
 import MetallicGlassButton from "./MetallicGlassButton";
 import type { MonthlyBudget } from "./MonthlyIncomeCard";

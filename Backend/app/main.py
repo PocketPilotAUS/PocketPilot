@@ -11,6 +11,7 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
 from app.core.config import ConfigurationError
+from app.core.languages import LanguageCode, LANGUAGE_NAMES
 from app.database import MAX_DATABASE_ID, get_db
 from app.dependencies import CurrentUser
 from app.routers import auth, chat, budget, proposals, recurring, planning
@@ -273,7 +274,8 @@ def get_ai_recommendations(
     year: int,
     month: int,
     current_user: CurrentUser,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    language: LanguageCode = "en"
 ):
     # Retrieve recommendations based on saved transactions
     result = get_recommendations(year, month, current_user, db)
@@ -283,6 +285,7 @@ def get_ai_recommendations(
     for recommendation in result["recommendations"]:
         # Prepare the prompt using verified calculations
         prompt = prepare_ai_explanation(recommendation)
+        prompt += f"\nWrite the explanation in {LANGUAGE_NAMES[language]}. Keep all amounts, dates and percentages unchanged."
 
         try:
             # Request an explanation from Qwen3

@@ -1,17 +1,8 @@
 import type { PlanningProfile } from "../types/plans";
 import FinancialPlanCard from "../components/ai/FinancialPlanCard";
 import React, { useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar } from "react-native";
+import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowUp, CloudOff, MessageCircle, RefreshCw, Sparkles, SquarePen, Target } from "lucide-react-native";
 
@@ -121,7 +112,7 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
       return (
         <View key={index} style={[ai.messageRow, ai.messageRowUser]}>
           <View style={[ai.bubble, ai.userBubble]}>
-            <Text selectable style={ai.userText}>{message.content}</Text>
+            <Text localize={false} selectable style={ai.userText}>{message.content}</Text>
           </View>
         </View>
       );

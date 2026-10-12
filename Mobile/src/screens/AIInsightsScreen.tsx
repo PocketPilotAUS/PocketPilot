@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StatusBar } from "react-native";
+import { Text, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RefreshCw, TriangleAlert } from "lucide-react-native";
 
@@ -19,6 +20,7 @@ import {
   buildTrend,
 } from "../utils/insights";
 import type { Transaction } from "../utils/transactions";
+import { usePreferences } from "../preferences/PreferencesContext";
 
 type Props = { apiBaseUrl: string; onBack: () => void };
 
@@ -35,6 +37,7 @@ async function getJson<T>(apiBaseUrl: string, path: string, signal?: AbortSignal
 }
 
 export default function AIInsightsScreen({ apiBaseUrl }: Props) {
+  const { language } = usePreferences();
   const { styles, ins, palette, mode } = useInsightsTheme();
 
   const [month, setMonth] = useState(() => {
@@ -107,7 +110,7 @@ export default function AIInsightsScreen({ apiBaseUrl }: Props) {
   const monthLoading = monthResult?.key !== monthKey;
   const ready = !monthLoading && monthResult?.status === "ready" ? monthResult : null;
   const flagged = ready ? ready.rules.length > 0 : false;
-  const aiKey = `${monthKey}-${aiAttempt}`;
+  const aiKey = `${monthKey}-${aiAttempt}-${language}`;
 
   // AI explanations (same request and timeout as before); only needed when
   // the 20% rule flagged something
@@ -122,7 +125,7 @@ export default function AIInsightsScreen({ apiBaseUrl }: Props) {
       try {
         const data = await getJson<{ ai_recommendations: AIRecommendation[] }>(
           apiBaseUrl,
-          `/recommendations/ai?year=${year}&month=${monthNumber}`,
+          `/recommendations/ai?year=${year}&month=${monthNumber}&language=${language}`,
           controller.signal
         );
 

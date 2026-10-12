@@ -1,5 +1,6 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
 
 import CategoryIcon from "./CategoryIcon";
 import { useTransactionsTheme } from "./useTransactionsTheme";
@@ -35,7 +36,7 @@ export default function TransactionRow({ transaction, today, first, onPress }: P
         </Text>
         <Text style={tx.rowSubtitle} numberOfLines={1}>
           {/* Date first, so a long description never hides it */}
-          {description ? `${date} · ${description}` : date}
+          {date}{description && <Text localize={false}> · {description}</Text>}
         </Text>
       </View>
 

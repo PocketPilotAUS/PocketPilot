@@ -4,7 +4,10 @@ import React, {
   useContext,
   useMemo,
   useState,
+  useEffect,
+  useRef,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   darkColors,
@@ -16,8 +19,7 @@ import {
 type ThemeContextType = {
   mode: ThemeMode;
   colors: AppColors;
-  toggleTheme: () => void;
-  setTheme: (mode: ThemeMode) => void;
+  setTheme: (mode: ThemeMode) => Promise<void>;
 };
 
 const ThemeContext = createContext<ThemeContextType | undefined>(
@@ -30,17 +32,25 @@ export function ThemeProvider({
   children: React.ReactNode;
 }) {
   const [mode, setMode] = useState<ThemeMode>("dark");
-
-  const toggleTheme = () => {
-    setMode((current) => (current === "dark" ? "light" : "dark"));
+  const userChanged = useRef(false);
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem("@pocketpilot_theme").then(saved => {
+      if (active && !userChanged.current && (saved === "dark" || saved === "light")) setMode(saved);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const setTheme = async (next: ThemeMode) => {
+    userChanged.current = true;
+    await AsyncStorage.setItem("@pocketpilot_theme", next);
+    setMode(next);
   };
 
   const value = useMemo(
     () => ({
       mode,
       colors: mode === "dark" ? darkColors : lightColors,
-      toggleTheme,
-      setTheme: setMode,
+      setTheme,
     }),
     [mode]
   );

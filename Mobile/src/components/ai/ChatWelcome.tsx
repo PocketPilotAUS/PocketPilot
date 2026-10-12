@@ -1,5 +1,6 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
 import { LinearGradient } from "expo-linear-gradient";
 import { CreditCard, PiggyBank, Scissors, ShieldCheck, Sparkles, Target } from "lucide-react-native";
 

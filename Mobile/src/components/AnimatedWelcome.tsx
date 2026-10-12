@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, View, Text } from "react-native";
+import { Animated, Easing } from "react-native";
+import { View, Text } from "../preferences/LocalizedNative";
 
 import PocketPilotLogo from "./PocketPilotLogo";
 import AmbientBackground from "./AmbientBackground";

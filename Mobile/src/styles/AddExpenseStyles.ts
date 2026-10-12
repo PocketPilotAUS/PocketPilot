@@ -4,6 +4,7 @@ import type { DashboardPalette } from "./DashboardStyles";
 // Add expense screen styles, on the shared Dashboard palette
 export const createAddExpenseStyles = (p: DashboardPalette) =>
   StyleSheet.create({
+    dateRow: { alignItems: "flex-start", marginBottom: 16 },
     flex: {
       flex: 1,
     },

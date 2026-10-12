@@ -91,7 +91,8 @@ def test_token_claims(jwt_secret):
 
     assert claims["sub"] == "42"
     assert claims["type"] == "access"
-    assert set(claims) == {"sub", "type", "iat", "exp"}
+    assert set(claims) == {"sub", "type", "iat", "exp", "version"}
+    assert claims["version"] == 0
     assert claims["exp"] - claims["iat"] == 30 * 60
     assert claims["iat"] >= before.timestamp()
     assert jwt.get_unverified_header(token)["alg"] == "HS256"

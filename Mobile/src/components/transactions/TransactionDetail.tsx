@@ -1,5 +1,6 @@
 import React from "react";
-import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable } from "react-native";
+import { Alert, Text, View } from "../../preferences/LocalizedNative";
 import { Trash2 } from "lucide-react-native";
 
 import BottomSheet from "./BottomSheet";
@@ -48,7 +49,7 @@ export default function TransactionDetail({ transaction, deleting, onClose, onDe
             <View style={[tx.detailRow, tx.rowDivider]}>
               <Text style={tx.detailLabel}>Description</Text>
               <Text style={tx.detailValue}>
-                {transaction.description?.trim() || "No description"}
+                {transaction.description?.trim() ? <Text localize={false}>{transaction.description.trim()}</Text> : "No description"}
               </Text>
             </View>
 

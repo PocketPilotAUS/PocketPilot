@@ -1,248 +1,52 @@
 import React, { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
-import { Pencil, TriangleAlert } from "lucide-react-native";
-
+import { Pressable } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
+import { Pencil, Sparkles, TriangleAlert } from "lucide-react-native";
 import { useDashboardTheme } from "./useDashboardTheme";
-import { saveBudgetPlan } from "../../services/budgetService";
-import { SessionExpiredError } from "../../services/apiClient";
-import {
-  BudgetRow,
-  DashboardData,
-  SAVINGS_CATEGORY,
-  buildBudgetRows,
-  formatAED,
-  formatPercent,
-  planTotal,
-  validatePlan,
-} from "../../utils/dashboard";
+import BudgetSetupForm from "./BudgetSetupForm";
+import { DashboardData, buildBudgetRows, formatAED } from "../../utils/dashboard";
 
-type Props = {
-  data: DashboardData | null;
-  apiBaseUrl: string;
-  onSaved: (data: DashboardData) => void;
-};
-
-// Share of the budget at which a bar turns amber
-const WARNING_RATIO = 0.8;
-
-export default function BudgetTracker({ data, apiBaseUrl, onSaved }: Props) {
-  const { styles, palette } = useDashboardTheme();
-
+type Props = { data: DashboardData | null; apiBaseUrl: string; onSaved: (data: DashboardData) => void; onReview: () => void; aiBusy: boolean };
+export default function BudgetTracker({ data, apiBaseUrl, onSaved, onReview, aiBusy }: Props) {
+  const { styles: s, palette } = useDashboardTheme();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const allocations = data?.ideal_budget?.allocations;
-
-  if (!data || !allocations) return null;
-
-  const rows = buildBudgetRows(allocations);
-  const overCount = rows.filter((row) => row.over).length;
-  const hasIncome = data.income !== null;
-  const savings = allocations.find((item) => item.category === SAVINGS_CATEGORY);
-  const total = planTotal(draft);
-
-  const startEditing = () => {
-    setDraft(Object.fromEntries(allocations.map((item) => [item.category, String(item.percentage)])));
-    setError("");
-    setEditing(true);
-  };
-
-  const save = async () => {
-    if (saving) return;
-
-    const problem = validatePlan(draft);
-
-    if (problem) {
-      setError(problem);
-      return;
-    }
-
-    setSaving(true);
-    setError("");
-
-    try {
-      const percentages = Object.fromEntries(
-        Object.entries(draft).map(([category, value]) => [category, Number(value)])
-      );
-      onSaved(await saveBudgetPlan(apiBaseUrl, data.year, data.month, percentages));
-      setEditing(false);
-    } catch (err) {
-      if (!(err instanceof SessionExpiredError)) {
-        setError("Could not save your budget. Please try again.");
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const renderRow = (row: BudgetRow) => {
-    const ratio = row.ratio ?? 0;
-    const fillStyle = row.over
-      ? styles.budgetFillDanger
-      : ratio >= WARNING_RATIO
-        ? styles.budgetFillWarning
-        : null;
-
-    return (
-      <View key={row.category}>
-        <View style={styles.budgetHeaderRow}>
-          <Text style={styles.budgetName} numberOfLines={1}>
-            {row.category}
-          </Text>
-
-          {row.target === null ? (
-            <Text style={styles.budgetFigures}>
-              <Text style={styles.budgetFiguresStrong}>{formatAED(row.spent)}</Text>
-              {` · ${row.percentage}% of income`}
-            </Text>
-          ) : (
-            <Text style={styles.budgetFigures}>
-              <Text style={[styles.budgetFiguresStrong, row.over && styles.statusDanger]}>
-                {formatAED(row.spent)}
-              </Text>
-              {` / ${formatAED(row.target)}`}
-            </Text>
-          )}
-        </View>
-
-        {row.target !== null && (
-          <View
-            style={styles.budgetTrack}
-            accessibilityRole="progressbar"
-            accessibilityLabel={`${row.category} budget used`}
-            accessibilityValue={{
-              min: 0,
-              max: 100,
-              now: Math.min(100, Math.round(Number.isFinite(ratio) ? ratio * 100 : 100)),
-              text: row.over ? `Over budget by ${formatAED(row.overBy)}` : `${formatPercent(ratio * 100)} used`,
-            }}
-          >
-            <View
-              style={[
-                styles.budgetFill,
-                fillStyle,
-                { width: `${Math.min(100, Number.isFinite(ratio) ? ratio * 100 : 100)}%` },
-              ]}
-            />
-          </View>
-        )}
-
-        {row.over && (
-          <View style={styles.overBadge}>
-            <TriangleAlert size={12} color={palette.danger} strokeWidth={2.4} />
-            <Text style={styles.overBadgeText}>Over by {formatAED(row.overBy)}</Text>
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleBlock}>
-          <Text style={styles.cardLabel}>Budget tracker</Text>
-          <Text style={[styles.cardSubtitle, hasIncome && (overCount > 0 ? styles.statusDanger : styles.statusOk)]}>
-            {!hasIncome
-              ? "Your budget split"
-              : overCount > 0
-                ? `${overCount} ${overCount === 1 ? "category" : "categories"} over budget`
-                : "All categories within budget"}
-          </Text>
-        </View>
-
-        {!editing && (
-          <Pressable
-            onPress={startEditing}
-            style={({ pressed }) => [styles.pill, pressed && styles.buttonDisabled]}
-            accessibilityRole="button"
-            accessibilityLabel="Edit budget split"
-          >
-            <Pencil size={13} color={palette.accent} strokeWidth={2.2} />
-            <Text style={styles.pillText}>Edit split</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {editing ? (
-        <View>
-          <Text style={[styles.mutedText, styles.editorIntro]}>
-            Set the share of your monthly income for each category. The total must be 100%.
-          </Text>
-
-          <View style={styles.splitGrid}>
-            {allocations.map((item) => (
-              <View key={item.category} style={styles.splitItem}>
-                <Text style={styles.splitName} numberOfLines={1}>
-                  {item.category}
-                </Text>
-                <TextInput
-                  value={draft[item.category] ?? ""}
-                  onChangeText={(value) =>
-                    setDraft((current) => ({ ...current, [item.category]: value.replace(/[^0-9]/g, "") }))
-                  }
-                  keyboardType="number-pad"
-                  maxLength={3}
-                  editable={!saving}
-                  style={styles.splitInput}
-                  accessibilityLabel={`${item.category} percentage of income`}
-                />
-                <Text style={styles.splitPercent}>%</Text>
-              </View>
-            ))}
-          </View>
-
-          <Text style={[styles.splitTotal, total === 100 ? styles.statusOk : styles.statusDanger]}>
-            Total: {total}% of income
-          </Text>
-
-          <View style={styles.buttonRow}>
-            <Pressable
-              onPress={() => { setEditing(false); setError(""); }}
-              disabled={saving}
-              style={[styles.secondaryButton, saving && styles.buttonDisabled]}
-              accessibilityRole="button"
-            >
-              <Text style={styles.secondaryButtonText}>Cancel</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => { void save(); }}
-              disabled={saving}
-              style={[styles.primaryButton, saving && styles.buttonDisabled]}
-              accessibilityRole="button"
-            >
-              <Text style={styles.primaryButtonText}>{saving ? "Saving…" : "Save split"}</Text>
-            </Pressable>
-          </View>
-
-          {!!error && <Text style={styles.formError}>{error}</Text>}
-        </View>
-      ) : (
-        <>
-          {!hasIncome && (
-            <Text style={[styles.mutedText, styles.trackerHint]}>
-              Add your monthly income above to turn this split into AED budgets.
-            </Text>
-          )}
-
-          <View style={styles.budgetList}>{rows.map(renderRow)}</View>
-
-          <View style={styles.budgetFooter}>
-            {savings && (
-              <Text style={styles.mutedText}>
-                {SAVINGS_CATEGORY}: {savings.percentage}% of income
-                {savings.target !== null ? ` (${formatAED(savings.target)})` : ""} planned.
-              </Text>
-            )}
-            <Text style={styles.mutedText}>
-              Expenses in other categories count toward Other.
-            </Text>
-          </View>
-        </>
-      )}
+  if (!data) return null;
+  if (editing) return <BudgetSetupForm data={data} apiBaseUrl={apiBaseUrl} onSaved={saved => { onSaved(saved); setEditing(false); }} onCancel={() => setEditing(false)} />;
+  const budget = data.ideal_budget;
+  if (!budget) return <View style={s.card}>
+    <Text style={s.cardLabel}>Create your budget</Text>
+    <Text style={s.cardSubtitle}>Set your own category amounts before tracking your spending. You can review the saved budget with AI afterwards.</Text>
+    <Pressable style={[s.primaryButton, s.budgetSetupAction]} onPress={() => setEditing(true)} accessibilityRole="button"><Text style={s.primaryButtonText}>Set up my budget</Text></Pressable>
+  </View>;
+  const rows = buildBudgetRows(budget.allocations, budget.mode === "amounts");
+  const overCount = rows.filter(row => row.over).length;
+  const planned = budget.allocations.reduce((sum, row) => sum + (row.target ?? 0), 0);
+  const left = data.income == null ? null : data.income - planned;
+  return <View style={s.card}>
+    <View style={s.cardHeader}>
+      <View style={s.cardTitleBlock}><Text style={s.cardLabel}>Budget tracker</Text><Text style={[s.cardSubtitle, overCount > 0 && s.statusDanger]}>{overCount > 0 ? `${overCount} categories over budget` : "Your saved monthly budget"}</Text></View>
+      <Pressable style={s.pill} onPress={() => setEditing(true)} accessibilityRole="button" accessibilityLabel="Edit my budget"><Pencil size={13} color={palette.accent} /><Text style={s.pillText}>Edit budget</Text></Pressable>
     </View>
-  );
+    <View style={s.budgetList}>{rows.map(row => {
+      const ratio = row.ratio ?? 0;
+      const percent = Math.min(100, Number.isFinite(ratio) ? ratio * 100 : 100);
+      return <View key={row.category}>
+        <View style={s.budgetHeaderRow}><Text style={s.budgetName}>{row.category}</Text><Text style={s.budgetFigures}><Text style={[s.budgetFiguresStrong, row.over && s.statusDanger]}>{formatAED(row.spent)}</Text>{row.target != null ? ` / ${formatAED(row.target)}` : ""}</Text></View>
+        {row.target != null && <View style={s.budgetTrack} accessibilityRole="progressbar" accessibilityLabel={`${row.category} budget used`} accessibilityValue={{ min: 0, max: 100, now: Math.round(percent), text: `${formatAED(row.spent)} / ${formatAED(row.target)}` }}>
+          <View style={[s.budgetFill, row.over ? s.budgetFillDanger : ratio >= .8 ? s.budgetFillWarning : null, { width: `${percent}%` }]} />
+        </View>}
+        {row.over && <View style={s.overBadge}><TriangleAlert size={12} color={palette.danger} /><Text style={s.overBadgeText}>Over by {formatAED(row.overBy)}</Text></View>}
+      </View>;
+    })}</View>
+    <View style={s.budgetFooter}>
+      <Text style={s.mutedText}>Planned monthly spending: {formatAED(planned)}</Text>
+      {left !== null && <Text style={left < 0 ? s.statusDanger : s.mutedText}>{left < 0 ? "Budget exceeds income by" : "Income left after your budget"}: {formatAED(Math.abs(left))}</Text>}
+      {!!budget.unbudgeted?.length && <>
+        <Text style={s.statusDanger}>Spending without a budget category</Text>
+        {budget.unbudgeted.map(row => <Text key={row.category} style={s.mutedText}>{row.category}: {formatAED(row.spent)}</Text>)}
+        <Text style={s.mutedText}>Edit your budget to add these categories. This spending still counts in your total.</Text>
+      </>}
+    </View>
+    <Pressable disabled={aiBusy} onPress={onReview} style={[s.budgetReviewButton, aiBusy && s.buttonDisabled]} accessibilityRole="button"><Sparkles color={palette.accent} size={17} /><Text style={s.pillText}>{aiBusy ? "PocketPilot is replying" : "Review my budget with AI"}</Text></Pressable>
+  </View>;
 }

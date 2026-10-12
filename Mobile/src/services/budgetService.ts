@@ -9,7 +9,9 @@ async function putJson(apiBaseUrl: string, path: string, body: object): Promise<
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    const body = await response.json().catch(() => ({}));
+    const detail = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail) ? body.detail.map((item: { msg?: string }) => item.msg?.replace(/^Value error, /, "")).filter(Boolean).join("\n") : "";
+    throw new Error(detail || "Could not save your budget. Please try again.");
   }
 
   // Both endpoints return the updated monthly summary
@@ -32,4 +34,8 @@ export function saveBudgetPlan(
   percentages: Record<string, number>
 ): Promise<DashboardData> {
   return putJson(apiBaseUrl, `/budget/plan?year=${year}&month=${month}`, { percentages });
+}
+
+export function saveBudgetSetup(apiBaseUrl: string, year: number, month: number, income: string, categories: { name: string; amount: string }[]): Promise<DashboardData> {
+  return putJson(apiBaseUrl, `/budget/setup?year=${year}&month=${month}`, { income, categories });
 }

@@ -1,19 +1,8 @@
 import React, { useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, Switch } from "react-native";
+import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CalendarDays, Check, Minus, NotebookPen, Plus, Repeat, Tag } from "lucide-react-native";
+import { CalendarDays, Check, Minus, NotebookPen, Plus, Repeat, Tag, X } from "lucide-react-native";
 
 import CategoryIcon from "../components/transactions/CategoryIcon";
 import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
@@ -36,11 +25,14 @@ type Props = {
   onBack: () => void;
   onSaved: () => void;
   apiBaseUrl: string;
+  budgetCategories?: string[];
+  onBusyChange?: (busy: boolean) => void;
 };
 
-export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
+export default function AddTransactionScreen({ onBack, onSaved, apiBaseUrl, budgetCategories = [], onBusyChange }: Props) {
   const { styles, palette, mode } = useDashboardTheme();
   const add = createAddExpenseStyles(palette);
+  const expenseCategories = [...new Map([...budgetCategories, ...EXPENSE_CATEGORIES].map(name => [name.toLowerCase(), name])).values()];
 
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Food");
@@ -77,6 +69,7 @@ export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
     }
 
     setSaving(true);
+    onBusyChange?.(true);
 
     try {
       const { path, body } = buildExpenseRequest(form, new Date(), requestKey);
@@ -102,6 +95,7 @@ export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
       Alert.alert("Connection error", "Could not save the transaction. Check that FastAPI is running.");
     } finally {
       setSaving(false);
+      onBusyChange?.(false);
     }
   };
 
@@ -115,7 +109,7 @@ export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
   const amountWidth = Math.ceil(shown.length * amountFontSize * 0.62) + 12;
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
+    <SafeAreaView style={styles.screen} edges={["top", "bottom", "left", "right"]}>
       <StatusBar barStyle={mode === "dark" ? "light-content" : "dark-content"} />
 
       <KeyboardAvoidingView style={add.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -133,7 +127,13 @@ export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
                 <Text style={styles.title}>Add expense</Text>
               </View>
 
-              {/* Expenses are always recorded with today's date */}
+              <Pressable onPress={onBack} disabled={saving} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Cancel adding transaction" accessibilityState={{ disabled: saving }}>
+                <X size={21} color={palette.text} />
+              </Pressable>
+            </View>
+
+            {/* Expenses are always recorded with today's date */}
+            <View style={add.dateRow}>
               <View style={add.dateChip} accessible accessibilityLabel={`Date: today, ${todayLabel}`}>
                 <CalendarDays size={14} color={palette.textSecondary} strokeWidth={2.2} />
                 <Text style={add.dateChipText}>Today · {todayLabel}</Text>
@@ -167,13 +167,13 @@ export default function AddTransactionScreen({ onSaved, apiBaseUrl }: Props) {
               </View>
 
               <View style={add.grid} accessibilityRole="radiogroup">
-                {EXPENSE_CATEGORIES.map((item) => {
+                {expenseCategories.map((item) => {
                   const selected = category === item;
 
                   return (
                     <Pressable
                       key={item}
-                      onPress={() => setCategory(item)}
+                      onPress={() => { setCategory(item); if (item === "Other" && budgetCategories.includes("Other")) setCustomCategory("Other"); }}
                       disabled={saving}
                       style={({ pressed }) => [add.tile, selected && add.tileSelected, pressed && styles.buttonDisabled]}
                       accessibilityRole="radio"

@@ -383,6 +383,7 @@ export const createDashboardStyles = (p: DashboardPalette) =>
       justifyContent: "center",
       marginVertical: 6,
     },
+    chartDeficit: { color: p.danger, fontSize: 13, lineHeight: 20, marginTop: 8 },
 
     chartCenter: {
       position: "absolute",
@@ -496,6 +497,8 @@ export const createDashboardStyles = (p: DashboardPalette) =>
     budgetList: {
       gap: 14,
     },
+    budgetSetupAction: { marginTop: 16, minHeight: 46 },
+    budgetReviewButton: { marginTop: 16, minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: p.accentSoft, borderRadius: 14, padding: 12 },
 
     budgetHeaderRow: {
       flexDirection: "row",

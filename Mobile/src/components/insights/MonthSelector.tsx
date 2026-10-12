@@ -1,5 +1,6 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 
 import { useInsightsTheme } from "./useInsightsTheme";

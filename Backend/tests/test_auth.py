@@ -33,7 +33,8 @@ def test_register_success(api_client):
 
     data = response.json()
 
-    assert set(data) == {"id", "name", "email", "created_at"}
+    assert set(data) == {"id", "name", "email", "phone", "created_at"}
+    assert data["phone"] is None
     assert data["name"] == "Alice"
     assert data["email"] == "alice@example.com"
     assert datetime.fromisoformat(data["created_at"]).tzinfo is not None
@@ -261,7 +262,7 @@ def test_me_returns_authenticated_user(api_client):
 
     assert response.status_code == 200
     assert response.json()["email"] == "alice@example.com"
-    assert set(response.json()) == {"id", "name", "email", "created_at"}
+    assert set(response.json()) == {"id", "name", "email", "phone", "created_at"}
 
 
 def test_me_identifies_each_user_correctly(api_client):

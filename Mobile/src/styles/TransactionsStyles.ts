@@ -5,6 +5,12 @@ import type { DashboardPalette } from "./DashboardStyles";
 // screens share the same colours, radii and typography
 export const createTransactionsStyles = (p: DashboardPalette) =>
   StyleSheet.create({
+    addButton: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+      minHeight: 48, backgroundColor: p.accent, borderRadius: 16,
+      paddingHorizontal: 16, paddingVertical: 12, marginBottom: 18,
+    },
+    addButtonText: { color: p.onAccent, fontSize: 15, fontWeight: "700" },
     // Summary
 
     summaryRow: {

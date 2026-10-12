@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.security import InvalidTokenError, decode_access_token
 from app.database import get_db
 from app.models.user import User
+from app.models.account_settings import get_account_settings
 
 # auto_error=False lets get_current_user return the same 401 response for
 # every failure (missing header, wrong scheme, bad token, unknown user).
@@ -38,6 +39,12 @@ def get_current_user(
 
     if user is None:
         raise credentials_error()
+
+    settings = get_account_settings(db, user.id)
+    try:
+        decode_access_token(credentials.credentials, expected_version=settings.token_version if settings else 0)
+    except InvalidTokenError:
+        raise credentials_error() from None
 
     return user
 

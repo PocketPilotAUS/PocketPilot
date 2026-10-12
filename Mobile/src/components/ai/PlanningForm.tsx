@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable } from "react-native";
+import { Text, TextInput, View } from "../../preferences/LocalizedNative";
 import KeyboardFormScrollView from "../KeyboardFormScrollView";
 import { useAITheme } from "./useAITheme";
 import { createPlanningStyles } from "../../styles/PlanningStyles";
@@ -7,6 +8,8 @@ import { PLAN_CATEGORIES, FinancialPlan, PlanningContext, PlanningProfile } from
 import { planningRequest } from "../../services/planningService";
 import { SessionExpiredError } from "../../services/apiClient";
 import { formatAED } from "../../utils/dashboard";
+import PlanningDateField from "./PlanningDateField";
+import { formatPlanningDate, parsePlanningDate, planningDateError } from "../../utils/planningDate";
 
 export const initialProfile = (context: PlanningContext): PlanningProfile => ({
   income: context.current_income, other_income: null, household_size: null, goal: null, goal_kind: null,
@@ -15,6 +18,13 @@ export const initialProfile = (context: PlanningContext): PlanningProfile => ({
 export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, onCancel }: { apiBaseUrl: string; context: PlanningContext; initial?: PlanningProfile; onPreview: (plan: FinancialPlan) => void; onCancel: () => void }) {
   const { palette } = useAITheme(); const s = createPlanningStyles(palette);
   const [profile, setProfile] = useState<PlanningProfile>(initial ?? initialProfile(context));
+  const [deadlineText, setDeadlineText] = useState(() => formatPlanningDate((initial ?? initialProfile(context)).deadline));
+  const [dateError, setDateError] = useState<string | null>(null);
+  const updateDeadline = (text: string) => {
+    setDeadlineText(text);
+    setDateError(null);
+    setProfile(current => ({ ...current, deadline: parsePlanningDate(text) }));
+  };
   const [step, setStep] = useState(0); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const change = (key: keyof PlanningProfile, value: unknown) => setProfile(current => ({ ...current, [key]: value }));
   const field = (label: string, key: keyof PlanningProfile, numeric = true, hint?: string) => <View key={key} style={{ gap: 8 }}>
@@ -23,6 +33,8 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
     <TextInput style={s.input} accessibilityLabel={label} placeholder={numeric ? "Enter amount or 0 if none" : "Enter here"} placeholderTextColor={palette.textMuted} keyboardType={numeric ? "decimal-pad" : "default"} value={profile[key] == null ? "" : String(profile[key])} editable={!busy} onChangeText={value => change(key, value === "" ? null : key === "household_size" ? Number(value) : value)} />
   </View>;
   const preview = async () => {
+    const invalidDate = planningDateError(deadlineText);
+    if (invalidDate) { setDateError(invalidDate); setStep(1); return; }
     setBusy(true); setError("");
     try {
       const result = await planningRequest<FinancialPlan & { missing?: string[] }>(apiBaseUrl, "/profile", "PUT", profile);
@@ -45,7 +57,7 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
         <View style={s.row}>{(["savings", "debt", "spending"] as const).map(kind => <Pressable key={kind} style={[s.chip, profile.goal_kind === kind && s.selected]} onPress={() => change("goal_kind", kind)}><Text style={s.text}>{kind === "spending" ? "Control spending" : kind === "debt" ? "Pay off debt" : "Save money"}</Text></Pressable>)}</View>
         {field(profile.goal_kind === "spending" ? "Monthly spending ceiling" : "Target amount", "target_amount")}
         {profile.goal_kind !== "spending" && field("Already saved or paid toward this goal", "current_amount")}
-        {profile.goal_kind !== "spending" && field("Target date YYYY-MM-DD", "deadline", false)}
+        {profile.goal_kind !== "spending" && <PlanningDateField value={deadlineText} onChange={updateDeadline} error={dateError} disabled={busy} />}
         <Text style={s.text}>Debt planning here allocates extra payments after minimums. Interest and an exact payoff schedule need a separate debt calculation.</Text>
       </>}
       {step === 2 && <>
@@ -64,7 +76,13 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
         </View>)}
       </>}
       {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-      {step < 2 ? <Pressable style={s.button} onPress={() => { setStep(step + 1); setError(""); }}><Text style={s.buttonText}>Continue</Text></Pressable> : <Pressable style={[s.button, busy && s.muted]} disabled={busy} onPress={() => { if (profile.goal_kind === "spending") { void previewSpending(); } else { void preview(); } }}><Text style={s.buttonText}>{busy ? "Checking…" : "Review My Plan"}</Text></Pressable>}
+      {step < 2 ? <Pressable style={s.button} onPress={() => {
+        if (step === 1 && profile.goal_kind !== "spending") {
+          const invalidDate = planningDateError(deadlineText);
+          if (invalidDate) { setDateError(invalidDate); return; }
+        }
+        setStep(step + 1); setError("");
+      }}><Text style={s.buttonText}>Continue</Text></Pressable> : <Pressable style={[s.button, busy && s.muted]} disabled={busy} onPress={() => { if (profile.goal_kind === "spending") { void previewSpending(); } else { void preview(); } }}><Text style={s.buttonText}>{busy ? "Checking…" : "Review My Plan"}</Text></Pressable>}
       {step > 0 && <Pressable disabled={busy} style={[s.button, s.secondary]} onPress={() => setStep(step - 1)}><Text style={s.secondaryText}>Back</Text></Pressable>}
       <Pressable disabled={busy} onPress={onCancel}><Text style={s.text}>Cancel</Text></Pressable>
     </View>

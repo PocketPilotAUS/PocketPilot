@@ -11,3 +11,4 @@ from app.models.recurring import RecurringExpense, RecurringOccurrence
 from app.models.budget_plan import BudgetPlan
 
 from app.models.financial_plan import PlanningProfile, FinancialPlan
+from app.models.account_settings import AccountSettings

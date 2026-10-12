@@ -1,6 +1,7 @@
 
 import React from "react";
-import { View, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
+import { View } from "../preferences/LocalizedNative";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
 

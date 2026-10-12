@@ -1,0 +1,25 @@
+import { StyleSheet } from "react-native";
+import type { DashboardPalette } from "./DashboardStyles";
+export const createBudgetSetupStyles = (p: DashboardPalette) => StyleSheet.create({
+  card: { backgroundColor: p.card, padding: 18, borderRadius: 22, borderWidth: 1, borderColor: p.border, gap: 14, marginBottom: 16 },
+  title: { color: p.text, fontSize: 19, fontWeight: "700" },
+  text: { color: p.textSecondary, fontSize: 13, lineHeight: 20 },
+  label: { color: p.text, fontSize: 13, fontWeight: "600" },
+  field: { gap: 7 },
+  input: { backgroundColor: p.input, color: p.text, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: p.border, minHeight: 46, fontSize: 14 },
+  category: { padding: 12, gap: 8, borderWidth: 1, borderColor: p.border, borderRadius: 14 },
+  categoryAdded: { position: "absolute", top: 4, right: 4, borderRadius: 8, padding: 2, backgroundColor: p.card },
+  customButtonLabel: { flexDirection: "row", alignItems: "center", gap: 8 },
+  categoryList: { gap: 10 },
+  selectedCategoryRow: { flexDirection: "row", alignItems: "center", gap: 6, borderBottomWidth: 1, borderBottomColor: p.border, paddingVertical: 8 },
+  selectedCategoryDetails: { flex: 1, gap: 3, paddingVertical: 6 },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  remove: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  button: { minHeight: 46, backgroundColor: p.accent, borderRadius: 14, padding: 12, alignItems: "center", justifyContent: "center" },
+  buttonText: { color: p.onAccent, fontWeight: "700", fontSize: 14 },
+  secondary: { backgroundColor: p.cardRaised, borderColor: p.border, borderWidth: 1 },
+  secondaryText: { color: p.text, fontSize: 14 },
+  error: { color: p.danger, fontSize: 13, lineHeight: 20 },
+  positive: { color: p.accent, fontSize: 14, fontWeight: "600" },
+  disabled: { opacity: .5 },
+});

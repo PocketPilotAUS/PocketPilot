@@ -1,5 +1,6 @@
 import React from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
 import { ArrowDownRight, ArrowUpRight, CloudOff, Flag, RefreshCw, Sparkles } from "lucide-react-native";
 
 import { useInsightsTheme } from "./useInsightsTheme";

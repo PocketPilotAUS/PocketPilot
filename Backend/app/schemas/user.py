@@ -74,6 +74,7 @@ class UserResponse(BaseModel):
     id: int
     name: str
     email: str
+    phone: str | None = None
     created_at: datetime
 
     @field_validator("created_at")
@@ -90,3 +91,32 @@ class Token(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    email: str = Field(max_length=EMAIL_MAX_LENGTH)
+    phone: str | None = Field(default=None, max_length=40)
+    current_password: str | None = Field(default=None, min_length=1, max_length=PASSWORD_MAX_LENGTH)
+
+    clean_name = field_validator("name")(UserCreate.clean_name.__func__)
+    clean_email = field_validator("email")(UserCreate.clean_email.__func__)
+
+    @field_validator("phone")
+    @classmethod
+    def clean_phone(cls, value):
+        if value is None or not value.strip():
+            return None
+        if not re.fullmatch(r"\+?[0-9 ()-]+", value.strip()):
+            raise ValueError("Use a phone number with digits and an optional country code.")
+        value = re.sub(r"[ ()-]", "", value.strip())
+        if not 7 <= len(value.lstrip("+")) <= 15:
+            raise ValueError("Phone numbers must contain 7 to 15 digits.")
+        return value
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
+    new_password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)

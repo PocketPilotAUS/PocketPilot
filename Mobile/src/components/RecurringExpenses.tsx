@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Text, TextInput, View } from "react-native";
+import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import MetallicGlassCard from "./MetallicGlassCard";
 import MetallicGlassButton from "./MetallicGlassButton";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";

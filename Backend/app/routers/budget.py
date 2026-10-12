@@ -5,7 +5,7 @@ from app.routers.recurring import sync_recurring
 from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import CurrentUser
@@ -68,7 +68,28 @@ class PlanInput(BaseModel):
 
 def ideal_budget(db, user_id, year, month, income, categories):
     plan = db.query(BudgetPlan).filter_by(user_id=user_id, year=year, month=month).first() if inspect(db.get_bind()).has_table("budget_plans") else None
-    percentages = json.loads(plan.percentages) if plan else DEFAULT_PERCENTAGES
+    if plan is None:
+        return None
+    payload = json.loads(plan.percentages)
+    if payload.get("version") == 2:
+        configured = payload["categories"]
+        targets = {row["name"]: Decimal(row["amount"]) for row in configured}
+        actuals = {key: Decimal(0) for key in targets}
+        unbudgeted = {}
+        for key, value in categories.items():
+            match = next((name for name in targets if name.casefold() == key.strip().casefold()), None)
+            if match is None:
+                unbudgeted[key] = unbudgeted.get(key, Decimal(0)) + value
+            else:
+                actuals[match] += value
+        total = sum(targets.values(), Decimal(0))
+        return {"customized": True, "mode": "amounts", "planned_total": float(total),
+                "planned_remaining": float(income - total) if income is not None else None,
+                "unbudgeted": [{"category": key, "spent": float(value)} for key, value in unbudgeted.items()],
+                "allocations": [{"category": key, "percentage": float(target / income * 100) if income else 0,
+                                  "target": float(target), "spent": float(actuals[key])} for key, target in targets.items()]}
+    # Preserve explicitly saved older budgets; never generate a default for new users.
+    percentages = payload
     actuals = {key: Decimal(0) for key in percentages}
     aliases = {"groceries": "Food", "transportation": "Transport", "utilities": "Bills", "housing": "Rent"}
     for key, value in categories.items():
@@ -81,6 +102,50 @@ def ideal_budget(db, user_id, year, month, income, categories):
         largest = max(targets, key=targets.get)
         targets[largest] += remainder
     return {"customized": plan is not None, "allocations": [{"category": key, "percentage": value, "target": float(targets[key]) if targets[key] is not None else None, "spent": float(actuals[key])} for key, value in percentages.items()]}
+
+
+class CategoryBudget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=40)
+    amount: Decimal = Field(ge=0, le=1000000000, decimal_places=2, max_digits=12, allow_inf_nan=False)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value):
+        value = value.strip()
+        if not value or not value.isprintable():
+            raise ValueError("Enter a valid category name.")
+        return value
+
+
+class BudgetSetup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    income: Decimal = Field(ge=0, le=1000000000, decimal_places=2, max_digits=12, allow_inf_nan=False)
+    categories: list[CategoryBudget] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def unique_categories(self):
+        names = [category.name.casefold() for category in self.categories]
+        if len(names) != len(set(names)):
+            raise ValueError("Each category must have a different name.")
+        return self
+
+
+@router.put("/setup")
+def setup(body: BudgetSetup, current_user: CurrentUser, year: int = Query(ge=1, le=9998), month: int = Query(ge=1, le=12), db: Session = Depends(get_db)):
+    # Income and budget are saved together; no paid transactions are created.
+    income = db.query(MonthlyIncome).filter_by(user_id=current_user.id, year=year, month=month).first()
+    if income is None:
+        income = MonthlyIncome(user_id=current_user.id, year=year, month=month)
+        db.add(income)
+    income.amount_cents = int(body.income * 100)
+    plan = db.query(BudgetPlan).filter_by(user_id=current_user.id, year=year, month=month).first()
+    if plan is None:
+        plan = BudgetPlan(user_id=current_user.id, year=year, month=month)
+        db.add(plan)
+    plan.percentages = json.dumps({"version": 2, "categories": [{"name": category.name, "amount": str(category.amount)} for category in body.categories]})
+    db.commit()
+    return summary(db, current_user.id, year, month)
 
 
 @router.put("/plan")

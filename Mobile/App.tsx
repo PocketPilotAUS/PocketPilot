@@ -1,17 +1,13 @@
 import useChatSession from "./src/hooks/useChatSession";
 import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  StatusBar,
-  TouchableOpacity,
-  Pressable,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
+import { StatusBar, TouchableOpacity, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, Alert } from "./src/preferences/LocalizedNative";
 
 import LoginScreen from "./src/screens/LoginScreen";
 import RegisterScreen from "./src/screens/RegisterScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
+import { PreferencesProvider, usePreferences } from "./src/preferences/PreferencesContext";
+import { localize } from "./src/preferences/localize";
 
 import { AuthUser, restoreSession, logout } from "./src/services/authService";
 import {
@@ -22,7 +18,7 @@ import {
 
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider } from "./src/theme/ThemeContext";
-import { Sun, Moon, LogOut, TriangleAlert } from "lucide-react-native";
+import { TriangleAlert, Settings } from "lucide-react-native";
 import KeyboardFormScrollView from "./src/components/KeyboardFormScrollView";
 import BottomNavigation, { AppTab } from "./src/components/BottomNavigation";
 import AmbientBackground from "./src/components/AmbientBackground";
@@ -35,14 +31,14 @@ import type { DashboardData } from "./src/utils/dashboard";
 
 import AIChatScreen from "./src/screens/AIChatScreen";
 import AIInsightsScreen from "./src/screens/AIInsightsScreen";
-import AddTransactionScreen from "./src/screens/AddTransactionScreen";
-import TransactionHistoryScreen from "./src/screens/TransactionHistoryScreen";
+import TransactionsScreen from "./src/screens/TransactionsScreen";
 
 import { createAppStyles } from "./src/styles/AppStyles";
 import { useAppTheme } from "./src/theme/ThemeContext";
 
 function PocketPilotApp() {
-  const { colors, mode, toggleTheme } = useAppTheme();
+  const { t, language } = usePreferences();
+  const { colors, mode } = useAppTheme();
   const styles = createAppStyles(colors);
   const dashboard = useDashboardTheme();
   type Screen =
@@ -50,15 +46,19 @@ function PocketPilotApp() {
     | "login"
     | "register"
     | "dashboard"
-    | "addTransaction"
     | "history"
     | "aiInsights"
-    | "aiChat";
+    | "aiChat"
+    | "settings";
 
   const [screen, setScreen] = useState<Screen>("welcome");
+  const [startAddingTransaction, setStartAddingTransaction] = useState(false);
+  const openAddTransaction = () => { setStartAddingTransaction(true); setScreen("history"); };
   const screenRef = useRef<Screen>(screen);
+  const settingsReturn = useRef<Screen>("dashboard");
+  const openSettings = () => { settingsReturn.current = screen; setScreen("settings"); };
 
-  const API_BASE_URL = "http://192.168.1.241:8000";
+  const API_BASE_URL = "http://192.168.1.240:8000";
   const chatSession = useChatSession(API_BASE_URL);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -120,7 +120,7 @@ function PocketPilotApp() {
   useEffect(() => {
     // Called when any request is rejected with 401 (expired or invalid token)
     setSessionExpiredHandler(() => {
-      const signedInScreens: Screen[] = ["dashboard", "addTransaction", "history", "aiInsights", "aiChat"];
+      const signedInScreens: Screen[] = ["dashboard", "history", "aiInsights", "aiChat", "settings"];
 
       // Ignore late responses once the user is already signed out
       if (!signedInScreens.includes(screenRef.current)) return;
@@ -184,7 +184,7 @@ function PocketPilotApp() {
   const withNavigation = (content: React.ReactNode) => (
     <View style={styles.container}>
       <View style={styles.container}>{content}</View>
-      <BottomNavigation active={screen as AppTab} onSelect={setScreen} />
+      <BottomNavigation active={screen as AppTab} onSelect={tab => { setStartAddingTransaction(false); setScreen(tab); }} />
     </View>
   );
   if (checkingSession) {
@@ -222,14 +222,10 @@ function PocketPilotApp() {
     );
   }
 
-  if (screen === "addTransaction") {
-    return withNavigation(
-      <AddTransactionScreen
-        apiBaseUrl={API_BASE_URL}
-        onBack={() => setScreen("dashboard")}
-        onSaved={() => setScreen("dashboard")}
-      />
-    );
+  if (screen === "settings") {
+    return <SettingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen(settingsReturn.current)} onUpdated={setCurrentUser} onLogout={handleLogout} onPasswordChanged={async () => {
+      await logout(); chatSession.reset(); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
+    }} />;
   }
 
   if (screen === "aiChat") {
@@ -242,10 +238,10 @@ function PocketPilotApp() {
 
   if (screen === "history") {
     return withNavigation(
-      <TransactionHistoryScreen
+      <TransactionsScreen
         apiBaseUrl={API_BASE_URL}
-        onBack={() => setScreen("dashboard")}
-        onAddExpense={() => setScreen("addTransaction")}
+        budgetCategories={spending?.ideal_budget?.allocations.map(row => row.category)}
+        initiallyAdding={startAddingTransaction}
       />
     );
   }
@@ -273,24 +269,14 @@ function PocketPilotApp() {
       <KeyboardFormScrollView contentContainerStyle={dashboard.styles.content}>
         <View style={dashboard.styles.header}>
           <View style={dashboard.styles.headerText}>
-            <Text style={dashboard.styles.eyebrow}>
-              {firstName ? `Hi, ${firstName}` : "Your finances"}
+            <Text localize={false} style={dashboard.styles.eyebrow}>
+              {firstName ? `${localize("Hi,", language)} ${firstName}` : localize("Your finances", language)}
             </Text>
             <Text style={dashboard.styles.title}>Dashboard</Text>
           </View>
 
-          <TouchableOpacity
-            style={dashboard.styles.iconButton}
-            onPress={toggleTheme}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle dark and light mode"
-          >
-            {mode === "dark" ? (
-              <Sun size={19} color={dashboard.palette.text} strokeWidth={1.8} />
-            ) : (
-              <Moon size={19} color={dashboard.palette.text} strokeWidth={1.8} />
-            )}
+          <TouchableOpacity style={dashboard.styles.iconButton} onPress={openSettings} accessibilityRole="button" accessibilityLabel={t("settings")}>
+            <Settings size={19} color={dashboard.palette.text} />
           </TouchableOpacity>
         </View>
 
@@ -311,23 +297,17 @@ function PocketPilotApp() {
         <SpendingBreakdown
           data={spending}
           loading={loading}
-          onAddExpense={() => setScreen("addTransaction")}
+          onAddExpense={openAddTransaction}
         />
 
         <BudgetTracker
           data={spending}
           apiBaseUrl={API_BASE_URL}
           onSaved={setSpending}
+          aiBusy={chatSession.busy}
+          onReview={() => { if (!spending?.ideal_budget || chatSession.busy) return; setScreen("aiChat"); void chatSession.send("Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.", { year: spending.year, month: spending.month }); }}
         />
 
-        <Pressable
-          onPress={handleLogout}
-          style={({ pressed }) => [dashboard.styles.logoutButton, pressed && dashboard.styles.buttonDisabled]}
-          accessibilityRole="button"
-        >
-          <LogOut size={17} color={dashboard.palette.textSecondary} strokeWidth={2} />
-          <Text style={dashboard.styles.logoutText}>Log out</Text>
-        </Pressable>
       </KeyboardFormScrollView>
     </SafeAreaView>
   );
@@ -336,9 +316,9 @@ function PocketPilotApp() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
+      <PreferencesProvider><ThemeProvider>
         <PocketPilotApp />
-      </ThemeProvider>
+      </ThemeProvider></PreferencesProvider>
     </SafeAreaProvider>
   );
 }

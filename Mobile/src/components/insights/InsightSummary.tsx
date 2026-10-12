@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
 import { CircleAlert, Sparkles, TrendingUp, TriangleAlert, Wallet } from "lucide-react-native";
 
 import { useInsightsTheme } from "./useInsightsTheme";

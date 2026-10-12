@@ -121,10 +121,10 @@ export type BudgetRow = {
   overBy: number;
 };
 
-export function buildBudgetRows(allocations: BudgetAllocation[]): BudgetRow[] {
+export function buildBudgetRows(allocations: BudgetAllocation[], allConfigured = false): BudgetRow[] {
   return allocations
-    .filter((item) => item.category !== SAVINGS_CATEGORY)
-    .filter((item) => item.percentage > 0 || item.spent > 0)
+    .filter((item) => allConfigured || item.category !== SAVINGS_CATEGORY)
+    .filter((item) => allConfigured || item.percentage > 0 || item.spent > 0)
     .map((item) => {
       const over = item.target !== null && item.spent - item.target > CENT;
 

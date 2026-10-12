@@ -1,11 +1,6 @@
 import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable } from "react-native";
+import { Text, TextInput, View } from "../../preferences/LocalizedNative";
 import { Pencil, Plus } from "lucide-react-native";
 
 import { useDashboardTheme } from "./useDashboardTheme";

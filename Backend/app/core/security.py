@@ -57,7 +57,8 @@ def simulate_password_check(password: str) -> None:
 
 def create_access_token(
     user_id: int,
-    expires_delta: timedelta | None = None
+    expires_delta: timedelta | None = None,
+    token_version: int = 0
 ) -> str:
     if expires_delta is None:
         expires_delta = timedelta(minutes=get_access_token_expire_minutes())
@@ -68,6 +69,7 @@ def create_access_token(
         # PyJWT requires the subject to be a string
         "sub": str(user_id),
         "type": ACCESS_TOKEN_TYPE,
+        "version": token_version,
         "iat": issued_at,
         "exp": issued_at + expires_delta
     }
@@ -75,7 +77,7 @@ def create_access_token(
     return jwt.encode(payload, get_jwt_secret_key(), algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> int:
+def decode_access_token(token: str, expected_version: int | None = None) -> int:
     # Read the secret first so a missing secret raises ConfigurationError
     # instead of being reported as an invalid token.
     secret = get_jwt_secret_key()
@@ -94,6 +96,10 @@ def decode_access_token(token: str) -> int:
 
     if payload["type"] != ACCESS_TOKEN_TYPE:
         raise InvalidTokenError("Wrong token type")
+
+    version = payload.get("version", 0)
+    if type(version) is not int or version < 0 or (expected_version is not None and version != expected_version):
+        raise InvalidTokenError("Session has been revoked")
 
     subject = payload["sub"]
 

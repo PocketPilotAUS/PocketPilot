@@ -1,12 +1,13 @@
 import React from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import Svg, { Circle, G } from "react-native-svg";
+import { ActivityIndicator, Pressable } from "react-native";
+import { Text, View } from "../../preferences/LocalizedNative";
+import IncomeDonut from "../IncomeDonut";
+import { incomeChart } from "../../utils/incomeChart";
 import { Plus } from "lucide-react-native";
 
 import { useDashboardTheme } from "./useDashboardTheme";
 import {
   DashboardData,
-  Slice,
   buildSlices,
   formatAED,
   formatAmount,
@@ -15,10 +16,6 @@ import {
 } from "../../utils/dashboard";
 
 const SIZE = 184;
-const STROKE = 20;
-const RADIUS = (SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-const GAP = 3;
 
 type Props = {
   data: DashboardData | null;
@@ -26,55 +23,12 @@ type Props = {
   onAddExpense: () => void;
 };
 
-function Donut({ slices, track }: { slices: Slice[]; track: string }) {
-  const gap = slices.length > 1 ? GAP : 0;
-  const lengths = slices.map((slice) => (slice.percentage / 100) * CIRCUMFERENCE);
-  // Where each slice starts along the circle
-  const starts = lengths.map((_, index) =>
-    lengths.slice(0, index).reduce((sum, length) => sum + length, 0)
-  );
-
-  return (
-    <Svg width={SIZE} height={SIZE}>
-      {/* Rotate so the first slice starts at 12 o'clock */}
-      <G rotation={-90} origin={`${SIZE / 2}, ${SIZE / 2}`}>
-        <Circle
-          cx={SIZE / 2}
-          cy={SIZE / 2}
-          r={RADIUS}
-          stroke={track}
-          strokeWidth={STROKE}
-          fill="none"
-        />
-        {slices.map((slice, index) => {
-          // Very small categories stay visible as a thin sliver
-          const visible = Math.max(lengths[index] - gap, 0.75);
-
-          return (
-            <Circle
-              key={slice.label}
-              cx={SIZE / 2}
-              cy={SIZE / 2}
-              r={RADIUS}
-              stroke={slice.color}
-              strokeWidth={STROKE}
-              strokeDasharray={`${visible} ${CIRCUMFERENCE}`}
-              strokeDashoffset={-starts[index]}
-              strokeLinecap="butt"
-              fill="none"
-            />
-          );
-        })}
-      </G>
-    </Svg>
-  );
-}
-
 export default function SpendingBreakdown({ data, loading, onAddExpense }: Props) {
   const { styles, palette, chartColors } = useDashboardTheme();
 
-  const slices = data ? buildSlices(data.category_spending, chartColors) : [];
-  const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
+  const chart = incomeChart(data ? buildSlices(data.category_spending, chartColors) : [], data?.income);
+  const slices = chart.slices;
+  const total = chart.total;
   const month = data ? monthName(data.month) : "";
 
   return (
@@ -82,7 +36,7 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleBlock}>
           <Text style={styles.cardLabel}>Spending breakdown</Text>
-          {data && <Text style={styles.cardSubtitle}>By category · {month}</Text>}
+          {data && <Text style={styles.cardSubtitle}>Share of income · {month}</Text>}
         </View>
       </View>
 
@@ -91,17 +45,17 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
       ) : slices.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.chartWrap}>
-            <Donut slices={[]} track={palette.track} />
+            <IncomeDonut chart={chart} size={SIZE} grey={palette.textMuted} danger={palette.danger} />
             <View style={styles.chartCenter}>
-              <Text style={styles.chartCenterLabel}>Total spent</Text>
+              <Text style={styles.chartCenterLabel}>{chart.validIncome ? "Monthly income" : "Income needed"}</Text>
               <Text style={styles.chartCenterCurrency}>AED</Text>
-              <Text style={styles.chartCenterValue}>{formatAmount(0)}</Text>
+              <Text style={styles.chartCenterValue} adjustsFontSizeToFit numberOfLines={1}>{chart.validIncome ? formatAmount(data!.income!) : "—"}</Text>
             </View>
           </View>
 
           <Text style={styles.emptyTitle}>No expenses yet{month ? ` for ${month}` : ""}</Text>
           <Text style={styles.emptyText}>
-            Your spending by category appears here once you record an expense.
+            {chart.validIncome ? `${formatAED(chart.remaining!)} of your income is unspent. Grey represents the remaining income.` : "Add your monthly income to see spending as a share of it."}
           </Text>
 
           <Pressable
@@ -119,15 +73,15 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
             style={styles.chartWrap}
             accessible
             accessibilityLabel={`Spending by category: ${slices
-              .map((slice) => `${slice.label} ${formatPercent(slice.percentage)}`)
-              .join(", ")}`}
+              .map((slice) => `${slice.label} ${slice.percentage === null ? "income unknown" : formatPercent(slice.percentage) + " of income"}`)
+              .join(", ")}. ${chart.remaining === null ? "Add monthly income." : `${formatAED(chart.remaining)} unspent.`}`}
           >
-            <Donut slices={slices} track={palette.track} />
+            <IncomeDonut chart={chart} size={SIZE} grey={palette.textMuted} danger={palette.danger} />
             <View style={styles.chartCenter}>
-              <Text style={styles.chartCenterLabel}>Total spent</Text>
+              <Text style={styles.chartCenterLabel}>{chart.validIncome ? "Monthly income" : "Income needed"}</Text>
               <Text style={styles.chartCenterCurrency}>AED</Text>
               <Text style={styles.chartCenterValue} adjustsFontSizeToFit numberOfLines={1}>
-                {formatAmount(total)}
+                {chart.validIncome ? formatAmount(data!.income!) : "—"}
               </Text>
             </View>
           </View>
@@ -140,10 +94,18 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
                   {slice.label}
                 </Text>
                 <Text style={styles.legendAmount}>{formatAED(slice.amount)}</Text>
-                <Text style={styles.legendPercent}>{formatPercent(slice.percentage)}</Text>
+                <Text style={styles.legendPercent}>{slice.percentage === null ? "—" : formatPercent(slice.percentage)}</Text>
               </View>
             ))}
+            {chart.validIncome && <View style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: palette.textMuted }]} />
+              <Text style={styles.legendName}>Unspent income</Text>
+              <Text style={styles.legendAmount}>{formatAED(chart.remaining!)}</Text>
+              <Text style={styles.legendPercent}>{formatPercent(chart.remainingPercent!)}</Text>
+            </View>}
           </View>
+          <Text style={styles.cardSubtitle}>{chart.validIncome ? `${formatAED(total)} spent · ${formatPercent(chart.usedPercent!)} of income. Grey is unspent income.` : "Enter a positive monthly income to calculate percentages. Recorded spending is shown above."}</Text>
+          {chart.overBy > 0 && <Text style={styles.chartDeficit}>{formatAED(chart.overBy)} over income. The full red ring means all income has been used; category percentages show the actual overage.</Text>}
         </>
       )}
     </View>

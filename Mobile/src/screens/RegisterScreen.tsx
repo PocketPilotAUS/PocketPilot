@@ -1,16 +1,7 @@
 
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ActivityIndicator,
-  StatusBar,
-} from "react-native";
+import { ScrollView, KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, StatusBar } from "react-native";
+import { View, Text, TextInput } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react-native";
 
