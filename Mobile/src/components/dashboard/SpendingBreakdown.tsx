@@ -102,12 +102,16 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
       )}
       <Pressable
         onPress={onAddExpense}
-        style={({ pressed }) => [styles.primaryButton, styles.spendingAddAction, pressed && styles.buttonDisabled]}
+        style={({ pressed }) => [
+          styles.compactAddButton,
+          styles.spendingAddAction,
+          pressed && styles.buttonDisabled,
+        ]}
         accessibilityRole="button"
-        accessibilityLabel="Add an expense"
+        accessibilityLabel="Add expenses"
       >
-        <Plus size={17} color={palette.onAccent} strokeWidth={2.6} />
-        <Text style={styles.primaryButtonText}>Add an expense</Text>
+        <Plus size={16} color={palette.onAccent} strokeWidth={2.6} />
+        <Text style={styles.compactAddButtonText}>Add expenses</Text>
       </Pressable>
     </View>
   );

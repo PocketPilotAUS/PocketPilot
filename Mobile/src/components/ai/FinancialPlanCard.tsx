@@ -72,7 +72,8 @@ export default function FinancialPlanCard({ plan, onSave, onEdit, onDelete, busy
     <View style={s.planHeading}>
       <Text style={s.planEyebrow}>{plan.id ? "SAVED PLAN" : "DRAFT PLAN"}</Text>
       <Text localize={false} style={s.title}>{plan.title}</Text>
-      <Text style={s.text}>{plan.profile.household_size} {plan.profile.household_size === 1 ? "person" : "people"} supported{plan.deadline ? ` · Target ${formatPlanningDate(plan.deadline)}` : ""}</Text>
+      {plan.profile.household_size != null && <Text style={s.text}>{plan.profile.household_size} {plan.profile.household_size === 1 ? "person" : "people"} supported{plan.deadline ? ` · Target ${formatPlanningDate(plan.deadline)}` : ""}</Text>}
+      {plan.budgetGoalSource && plan.profile.household_size == null && plan.deadline && <Text style={s.text}>Target {formatPlanningDate(plan.deadline)}</Text>}
     </View>
     <View style={[s.scenarioSwitch, { marginBottom: 8 }]} accessibilityRole="tablist">
       {(["overview", "spending", "advice"] as const).map(tab => (

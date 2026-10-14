@@ -492,13 +492,35 @@ export const createDashboardStyles = (p: DashboardPalette) =>
       fontWeight: "700",
     },
 
+    compactAddButton: {
+      flexGrow: 0,
+      flexShrink: 0,
+      flexBasis: 'auto',
+      alignSelf: "flex-end",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      minHeight: 44,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 14,
+      backgroundColor: p.accent,
+    },
+
+    compactAddButtonText: {
+      color: p.onAccent,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+
     // Budget tracker
 
     budgetList: {
       gap: 14,
     },
     budgetSetupAction: { marginTop: 16, minHeight: 46 },
-    spendingAddAction: { flexGrow: 0, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 16, minHeight: 46 },
+    spendingAddAction: {marginTop: 16,},
     budgetReviewButton: { marginTop: 16, minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: p.accentSoft, borderRadius: 14, padding: 12 },
 
     budgetHeaderRow: {

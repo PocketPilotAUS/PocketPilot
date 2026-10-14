@@ -59,6 +59,9 @@ def generate_ai_explanation(prompt):
 def generate_chat_reply(messages):
     from app.schemas.planning import PlanningInput, CATEGORIES
     profile_schema = PlanningInput.model_json_schema()
+    # Retain compatibility with existing saved plans, but restore the earlier
+    # conversational extraction protocol instead of requesting a chosen rate.
+    profile_schema["properties"].pop("monthly_contribution", None)
     # Constrain category labels at generation time instead of allowing arbitrary keys
     # that the profile validator must reject afterwards.
     profile_schema["properties"]["expenses"] = {

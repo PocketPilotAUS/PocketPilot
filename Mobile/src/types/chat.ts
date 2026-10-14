@@ -18,5 +18,18 @@ export type ChatMessage = {
   content: string;
   proposal?: Proposal;
   plan?: FinancialPlan;
+  planDeclined?: boolean;
   planningProfile?: PlanningProfile;
+  goalPlanning?: boolean;
+  budgetRequired?: boolean;
+  budgetGoal?: BudgetGoal;
+};
+
+export type BudgetChoice = { category: string; target: number | null; fingerprint: string };
+export type BudgetGoal = {
+ ready: boolean; budget_fingerprint: string; income: number; planned_total: number; availableBefore: number; availableAfter: number; missing: string[];
+ accepted: { category: string; target: number }[]; protected: string[];
+ suggestions: { category: string; baseline: number; target: number; monthlyAmount: number; essential: boolean }[];
+ requiredMonthly?: number; unfundedMonthly?: number; feasible?: boolean; progress_known?: boolean;
+ scenarioUnfunded?: number; later_deadline?: string | null; scenario_deadline?: string | null; no_surplus?: boolean;
 };

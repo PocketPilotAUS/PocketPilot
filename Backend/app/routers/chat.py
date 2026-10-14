@@ -6,7 +6,8 @@ import json
 from decimal import Decimal
 from app.core.currency import display_context, base_patch
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from app.services.budget_goals import assess as assess_budget_goal, fingerprint as budget_fingerprint
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,6 +46,21 @@ class BudgetPeriod(BaseModel):
     month: int = Field(ge=1, le=12, strict=True)
 
 
+class BudgetChoices(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    protected: list[str] = Field(default_factory=list, max_length=50)
+    targets: dict[str, Decimal] = Field(default_factory=dict)
+    fingerprint: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def valid_choices(self):
+        if len(self.targets) > 50 or any(not name.strip() or len(name) > 40 or not name.isprintable() for name in [*self.protected, *self.targets]):
+            raise ValueError("Invalid budget category")
+        if any(not value.is_finite() or value < 0 or value > 1_000_000_000 or value.as_tuple().exponent < -2 for value in self.targets.values()):
+            raise ValueError("Invalid scenario amount")
+        return self
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     messages: list[Message] = Field(min_length=1, max_length=21)
@@ -53,6 +69,12 @@ class ChatRequest(BaseModel):
     currency: Literal["AED", "CNY"] = "AED"
     aed_to_cny: Decimal | None = Field(default=None, ge=0.0001, lt=1000, allow_inf_nan=False)
     review_budget: BudgetPeriod | None = None
+    goal_planning: bool = False
+    require_budget: bool = False
+    budget_draft_fingerprint: str | None = Field(default=None, max_length=64)
+    budget_draft_status: Literal["draft", "saved", "declined"] | None = None
+    resume_budget_goal: bool = False
+    budget_choices: BudgetChoices | None = None
 
     @model_validator(mode="after")
     def validate_conversation(self):
@@ -73,15 +95,32 @@ class ChatResponse(BaseModel):
     proposal: dict | None = None
     plan: dict | None = None
     planning_profile: dict | None = None
+    goal_planning: bool = False
+    budget_required: bool = False
+    budget_goal: dict | None = None
 
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get_db)):
     sync_recurring(db, current_user.id)
-    period = body.review_budget or BudgetPeriod(year=date.today().year, month=date.today().month)
+    today = datetime.now(timezone(timedelta(hours=4))).date()
+    period = body.review_budget or BudgetPeriod(year=today.year, month=today.month)
     budget = budget_summary(db, current_user.id, period.year, period.month)
     if body.review_budget and budget["ideal_budget"] is None:
         raise HTTPException(422, "Create and save your budget before requesting an AI review.")
+    goal_mode = not body.review_budget and (body.goal_planning or any(
+        re.search(r"\b(?:want to save|save for|saving for|savings goal|vacation|holiday|goal deadline|reach my goal)\b|ادخر|إجازة|储蓄目标|度假", message.content, re.I)
+        for message in body.messages if message.role == "user"))
+    needs_budget = budget["ideal_budget"] is None or budget["income"] is None or any(row["target"] is None for row in budget["ideal_budget"]["allocations"])
+    # Mobile chat requires a saved budget independently of how the user phrases
+    # their first message. Older API clients can still use general finance chat.
+    if (goal_mode or body.require_budget) and needs_budget:
+        replies = {"ar": "يرجى إكمال مخطط ميزانيتك لهذا الشهر أولًا. سأستخدم دخلك ومبالغ الإنفاق المخطط لها لمتابعة هدفك بعد الحفظ.",
+                   "zh": "请先填写本月预算。保存后，我会使用你的收入和计划支出继续评估目标。"}
+        return ChatResponse(reply=replies.get(body.language, "Please fill out your budget tracker for this month first. After you save it, I will use your income and planned spending to continue with your goal."), goal_planning=True, budget_required=True, planning_profile=body.planning_profile.model_dump(mode="json") if body.planning_profile else None)
+    choices = body.budget_choices.model_dump(mode="json") if body.budget_choices else {}
+    if goal_mode and choices.get("fingerprint") != budget_fingerprint(budget):
+        choices["targets"] = {}
     # Aggregate only this user's expenses; never send credentials or other users' data.
     rows = db.query(
         func.strftime("%Y-%m", Transaction.date), Transaction.category,
@@ -91,7 +130,7 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     ).order_by(func.strftime("%Y-%m", Transaction.date).desc(), Transaction.category).limit(120).all()
     incomes = db.query(MonthlyIncome).filter_by(user_id=current_user.id).order_by(MonthlyIncome.year.desc(), MonthlyIncome.month.desc()).limit(12).all()
     context = {
-        "today": date.today().isoformat(), "currency": "AED",
+        "today": today.isoformat(), "currency": "AED",
         "recorded_expenses_by_month_and_category": [
             {"month": month, "category": category, "amount": round(amount, 2), "count": count}
             for month, category, amount, count in rows
@@ -111,6 +150,15 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
         planning["assessment"] = evaluate(PlanningInput.model_validate(known), planning)
     except ValueError:
         planning["assessment"] = {"ready": False, "note": "Planning details need review; do not invent a completed plan."}
+    if goal_mode:
+        # Saved targets supersede conversation expense estimates in this flow.
+        known = dict(planning["profile"])
+        known["income"] = budget["income"]
+        known["expenses"] = {}
+        known["typical_months"] = []
+        planning["profile"] = known
+        planning["assessment"] = assess_budget_goal(known, budget, today, choices)
+        planning["baseline_source"] = "Saved budget tracker planned amounts, not actual transactions."
     context["planning"] = planning
     if body.currency == "CNY":
         context = display_context(context, body.aed_to_cny)
@@ -131,7 +179,19 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
         "Never label a category excessive solely because it is the largest. Consider dependents, essential costs and user-protected categories. "
         "Explain specific workable cuts and their effect on the goal; flag shortfalls and unrealistic deadlines without shaming. "
         "Use the planning profile (which may be an unconfirmed conversational draft) and verified assessment instead of repeatedly asking known details. Use its calculated shortfalls, category targets and cut amounts when present; never invent a replacement plan.  Unknown costs are not zero. "
-        "For planning, collect monthly category estimates or confirmed typical months. Debt payments mean required minimums; additional debt contributions are separate. "
+        + ("BUDGET GOAL MODE: Use saved_monthly_budget income and category TARGETS as the authoritative planned monthly baseline. "
+         "Never substitute transaction totals or ask the user to enter income/category amounts again. Custom budget categories keep their original names. "
+         "Ask only for missing goal, target, exact future deadline and optional existing goal savings; do not invent what 'next summer' means. "
+         "The server assessment calculates available money, monthly requirement and later deadlines. Use these exact figures. "
+         "Explain the result once in the normal reply: if they follow this budget every month, they would have the projected surplus left each month and would need to set aside the required contribution from it each month. "
+         "Never call the budget surplus 'current available funds', money they already have, or an actual bank balance. It is a conditional monthly projection, not recorded savings. "
+         "Do not repeat a budget summary or recap the same figures more than once. Say 'If you follow your budget each month, you would have [verified surplus] left per month; you would need to save [verified required contribution] of it each month toward the goal', using the actual verified figures and selected currency. "
+         "If the budget is inflexible or protected, explain the gap and offer the calculated later deadline. With zero/negative surplus explain that extending time alone cannot solve it. "
+         "For flexible budgets ask about specific nonessential reductions and their monthly effect. If essentials need review, ask whether the user can realistically live on the proposed amount; never declare them excessive or assume consent. "
+         "Respect categories the user says cannot be reduced. Scenario suggestions do not change saved budgets or deadlines. "
+         "Do not output income/expenses/typical_months in planning in this mode. Collect only explicit goal facts and protected canonical categories. "
+         "No expense or income action is allowed from goal advice. Do not automatically save or modify financial data. " if goal_mode else "") +
+        ("For planning, collect monthly category estimates or confirmed typical months. Debt payments mean required minimums; additional debt contributions are separate. " if not goal_mode else "Saved budget amounts are planning targets, not paid expenses. ") +
         "Planning changes do not mean a bill was paid. Return an optional planning object containing ONLY facts explicitly stated or corrected by the user in this turn, using the planning schema. "
         "Never infer a zero, a deadline, household size or expense amount from silence, a hypothetical question or your own recommendation. "
         "Do not put recommended cuts into the planning expenses: those are baseline costs. The app calculates and presents the reviewable plan. "
@@ -148,9 +208,25 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
             "Previous messages may use AED; respect their explicit units. Clarify unsupported/ambiguous currency. "
             "The server converts structured CNY drafts to AED for review and storage; never claim a record was saved.\n" + system
         )
+    if goal_mode:
+        system = system.replace(
+            "Use recorded expenses and details the user supplies. Ask for missing income, essential bills, debt balances, interest rates, minimum payments and goals when needed.",
+            "Use saved budget income and planned category targets for this goal. Ask only for missing goal details and whether proposed reductions are realistic.")
+        system = system.replace(
+            "Ask the main financial goal, amount and deadline, how many people this income supports, and other household income.",
+            "Ask for missing goal, target and exact deadline. Household needs can help discuss affordability of cuts, but do not ask again for saved income or category amounts.")
+        system = system.replace(
+            "Use past recorded months as reference; ask which are complete and typical before calling them a baseline.",
+            "The saved planned budget is the baseline. Do not require transaction history to plan a goal.")
+        system = system.replace(
+            "For incomplete details, give a provisional remainder and ask one useful question about missing necessities such as fuel, medical or family costs.",
+            "Explain that unlisted costs are excluded. Ask whether the saved budget covers their needs rather than collecting the same expenses again.")
     system = f"Write all user-facing reply text in {LANGUAGE_NAMES[body.language]}. Keep JSON protocol keys, dates, numeric values and stored category identifiers unchanged.\n" + system
     if body.review_budget:
         system = "Review the user's saved monthly budget from context. Category targets were entered by the user, not generated defaults. Respect custom categories. Compare income, planned amounts, actual spending and unbudgeted costs; ask about missing costs and give reviewable suggestions. Do not change any budget, create any expense/income action or financial plan. Return action null and planning null. The user must explicitly edit and save any budget changes.\n" + system
+    if goal_mode and body.resume_budget_goal:
+        system = system.replace("ONLY facts explicitly stated or corrected by the user in this turn", "ONLY goal facts explicitly stated by the user in this conversation, including before budget setup")
+        system = "The user has returned from budget setup. Recover their pending goal, target and exact deadline from explicit prior USER messages. Do not ask them to repeat these, and never treat prior assistant suggestions as agreed facts.\n" + system
     try:
         reply = generate_chat_reply([{"role": "system", "content": system}] +
                                     [message.model_dump() for message in body.messages])
@@ -161,11 +237,15 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     try:
         parsed = json.loads(reply)
     except json.JSONDecodeError:
+        if goal_mode:
+            profile = PlanningInput.model_validate(planning["profile"]).model_dump(mode="json")
+            return ChatResponse(reply=reply.strip(), planning_profile=profile, goal_planning=True,
+                                budget_goal=assess_budget_goal(profile, budget, today, choices))
         return ChatResponse(reply=reply.strip())
     if not isinstance(parsed, dict) or not isinstance(parsed.get("reply"), str) or not parsed["reply"].strip() or len(parsed["reply"]) > 16000:
         raise HTTPException(503, "AI chat is temporarily unavailable. Please try again later.")
     proposal = None
-    if parsed.get("action") is not None and body.review_budget is None:
+    if parsed.get("action") is not None and body.review_budget is None and not goal_mode:
         try:
             action = ProposedAction.model_validate(base_patch(parsed["action"], body.aed_to_cny) if body.currency == "CNY" else parsed["action"])
         except ValueError:
@@ -180,6 +260,8 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
             patch = PlanningInput.model_validate(base_patch(parsed["planning"], body.aed_to_cny) if body.currency == "CNY" else parsed["planning"]).model_dump(mode="json", exclude_unset=True, exclude_none=True)
             # Generated empty defaults are not evidence that the user cleared data.
             patch = {key: value for key, value in patch.items() if value not in ([], {})}
+            if goal_mode:
+                patch = {key: value for key, value in patch.items() if key not in ("income", "other_income", "expenses", "typical_months")}
             merged = dict(planning["profile"])
             if merged.get("income") is None and planning["current_income"] is not None:
                 merged["income"] = planning["current_income"]
@@ -187,10 +269,12 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
             for key, value in patch.items():
                 if key == "expenses":
                     merged[key] = {**merged.get(key, {}), **value}
+                elif key == "protected_categories" and goal_mode:
+                    merged[key] = list(dict.fromkeys([*merged.get(key, []), *value]))
                 else:
                     merged[key] = value
             validated = PlanningInput.model_validate(merged)
-            checked = evaluate(validated, planning)
+            checked = assess_budget_goal(validated.model_dump(mode="json"), budget, today, choices) if goal_mode else evaluate(validated, planning)
             # Model extraction is a reviewable draft, never an automatic profile write.
             updated_profile = json.loads(validated.model_dump_json())
             if checked["ready"]:
@@ -208,5 +292,9 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     if isinstance(nested, (dict, list)):
         # Some small models put protocol JSON inside the reply string.
         # Never show that protocol as advice or treat its embedded fields as facts.
-        final_reply = "Let’s review your household income, monthly costs and main financial goal. You can complete or correct the details in My Financial Plans; nothing has been saved from this draft."
+        final_reply = "Your saved budget is loaded. Review the goal details and scenario below; nothing has been changed." if goal_mode else "Let’s review your household income, monthly costs and main financial goal. You can complete or correct the details in My Financial Plans; nothing has been saved from this draft."
+    if goal_mode:
+        updated_profile = updated_profile or PlanningInput.model_validate(planning["profile"]).model_dump(mode="json")
+        assessment = assess_budget_goal(updated_profile, budget, today, choices)
+        return ChatResponse(reply=final_reply, planning_profile=updated_profile, goal_planning=True, budget_goal=assessment)
     return ChatResponse(reply=final_reply, proposal=proposal, plan=plan, planning_profile=updated_profile)

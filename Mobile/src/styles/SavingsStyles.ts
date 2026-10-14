@@ -1,7 +1,7 @@
 import { StyleSheet } from "react-native";
 import type { DashboardPalette } from "./DashboardStyles";
 export const createSavingsStyles = (p: DashboardPalette) => StyleSheet.create({
-  manualAddButton: { flexGrow: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 46, marginBottom: 16 },
+  manualAddButton: { marginBottom: 16 },
   manualPressed: { opacity: .75 },
   manualRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: p.border },
   manualBody: { flex: 1, gap: 6 },

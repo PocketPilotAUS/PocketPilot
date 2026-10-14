@@ -12,6 +12,7 @@ from app.models.savings import MonthlySavings, ManualSavings
 from app.models.income import MonthlyIncome
 from app.models.transaction import Transaction
 from app.routers.budget import summary
+from app.services.debt_payments import monthly_cents, ready as payments_ready
 
 router = APIRouter(prefix="/savings", tags=["Savings"])
 
@@ -32,6 +33,7 @@ def cents(value):
 def record(row):
     return {"year": row.year, "month": row.month, "income": row.income_cents / 100,
             "spent": row.spent_cents / 100, "extra_debt_payments": row.extra_debt_cents / 100,
+            "debt_payments": row.extra_debt_cents / 100,
             "saved": row.saved_cents / 100,
             "leftover": (row.income_cents - row.spent_cents - row.extra_debt_cents) / 100}
 
@@ -40,7 +42,8 @@ class Confirmation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     year: int = Field(ge=1, le=9998, strict=True)
     month: int = Field(ge=1, le=12, strict=True)
-    extra_debt_payments: Decimal = Field(ge=0, le=1_000_000_000, max_digits=12, decimal_places=2, allow_inf_nan=False)
+    extra_debt_payments: Decimal = Field(default=0, ge=0, le=1_000_000_000, max_digits=12, decimal_places=2, allow_inf_nan=False)
+    expected_debt_payments: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
     expected_income: Decimal = Field(ge=0, allow_inf_nan=False)
     expected_spent: Decimal = Field(ge=0, allow_inf_nan=False)
 
@@ -50,9 +53,10 @@ def overview(current_user: CurrentUser, year: int = Query(ge=1, le=9998), month:
     ready(db)
     manual_ready(db)
     data = summary(db, current_user.id, year, month)
+    debt_paid = monthly_cents(db, current_user.id, year, month)
     history = db.query(MonthlySavings).filter_by(user_id=current_user.id).order_by(MonthlySavings.year.desc(), MonthlySavings.month.desc()).all()
     entries = db.query(ManualSavings).filter_by(user_id=current_user.id).order_by(ManualSavings.id.desc()).all()
-    return {"year": year, "month": month, "income": data["income"], "spent": data["spent"],
+    return {"year": year, "month": month, "income": data["income"], "spent": data["spent"], "debt_payments": debt_paid / 100,
             "can_confirm": (year, month) < (today().year, today().month),
             "total_saved": (sum(row.saved_cents for row in history) + sum(row.amount_cents for row in entries)) / 100,
             "manual_total": sum(row.amount_cents for row in entries) / 100,
@@ -65,6 +69,7 @@ def confirm(body: Confirmation, current_user: CurrentUser, db: Session = Depends
     ready(db)
     if (body.year, body.month) >= (today().year, today().month):
         raise HTTPException(422, "Confirm savings only after the month has ended.")
+    payments_ready(db)
     # Release the auth read transaction; serialize snapshot confirmation and upsert.
     summary(db, current_user.id, body.year, body.month)
     db.commit()
@@ -83,12 +88,15 @@ def confirm(body: Confirmation, current_user: CurrentUser, db: Session = Depends
         raise HTTPException(422, "Set income for this month before confirming savings.")
     if cents(data["income"]) != cents(body.expected_income) or cents(data["spent"]) != cents(body.expected_spent):
         raise HTTPException(409, "Monthly records changed. Refresh and review the savings estimate again.")
+    debt_paid = monthly_cents(db, current_user.id, body.year, body.month)
+    if body.expected_debt_payments is not None and cents(body.expected_debt_payments) != debt_paid:
+        raise HTTPException(409, "Debt payments changed. Refresh and review savings again.")
     row = db.query(MonthlySavings).filter_by(user_id=current_user.id, year=body.year, month=body.month).first()
     if row is None:
         row = MonthlySavings(user_id=current_user.id, year=body.year, month=body.month)
         db.add(row)
     row.income_cents, row.spent_cents = cents(data["income"]), cents(data["spent"])
-    row.extra_debt_cents = cents(body.extra_debt_payments)
+    row.extra_debt_cents = debt_paid
     row.saved_cents = max(0, row.income_cents - row.spent_cents - row.extra_debt_cents)
     db.commit()
     return record(row)

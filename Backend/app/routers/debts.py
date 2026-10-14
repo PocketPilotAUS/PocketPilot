@@ -1,4 +1,9 @@
 import math
+from datetime import date, datetime, timedelta, timezone
+from uuid import UUID
+from sqlalchemy.exc import IntegrityError
+from app.models.debt_payment import DebtPayment
+from app.services.debt_payments import ready as payments_ready
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -54,6 +59,70 @@ def owned(db, user_id, debt_id):
     if debt is None:
         raise HTTPException(404, "Debt not found")
     return debt
+
+
+class PaymentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    amount: Decimal = Field(gt=0, le=1_000_000_000, max_digits=12, decimal_places=2, allow_inf_nan=False)
+    paid_on: date
+    request_key: UUID
+
+    @field_validator("paid_on")
+    @classmethod
+    def completed_date(cls, value):
+        if value > datetime.now(timezone(timedelta(hours=4))).date():
+            raise ValueError("Enter a payment date on or before today.")
+        return value
+
+
+def payment_record(row):
+    return {"id": row.id, "debt_id": row.debt_id, "debt_name": row.debt_name,
+            "amount": row.amount_cents / 100, "paid_on": row.paid_on.isoformat()}
+
+
+@router.get("/payments")
+def list_payments(current_user: CurrentUser, db: Session = Depends(get_db)):
+    payments_ready(db)
+    return [payment_record(row) for row in db.query(DebtPayment).filter_by(user_id=current_user.id)
+            .order_by(DebtPayment.paid_on.desc(), DebtPayment.id.desc()).all()]
+
+
+@router.post("/{debt_id}/payments", status_code=201)
+def add_payment(debt_id: int, body: PaymentInput, current_user: CurrentUser, db: Session = Depends(get_db)):
+    payments_ready(db)
+    user_id, key = current_user.id, str(body.request_key)
+    amount = int(body.amount * 100)
+    def retry(previous):
+        if previous.debt_id != debt_id or previous.amount_cents != amount or previous.paid_on != body.paid_on:
+            raise HTTPException(409, "This payment request was already used. Start a new payment.")
+        return payment_record(previous)
+    previous = db.query(DebtPayment).filter_by(user_id=user_id, request_key=key).first()
+    if previous:
+        return retry(previous)
+    debt = owned(db, user_id, debt_id)
+    row = DebtPayment(user_id=user_id, debt_id=debt.id, debt_name=debt.name,
+                      amount_cents=amount, paid_on=body.paid_on, request_key=key)
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        previous = db.query(DebtPayment).filter_by(user_id=user_id, request_key=key).first()
+        if previous is None:
+            raise
+        return retry(previous)
+    return payment_record(row)
+
+
+@router.delete("/payments/{payment_id}", status_code=204)
+def remove_payment(payment_id: int, current_user: CurrentUser, db: Session = Depends(get_db)):
+    payments_ready(db)
+    row = db.query(DebtPayment).filter_by(user_id=current_user.id, id=payment_id).first() if 1 <= payment_id <= MAX_DATABASE_ID else None
+    if row is None:
+        raise HTTPException(404, "Payment not found")
+    db.delete(row)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("")

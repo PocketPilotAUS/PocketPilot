@@ -32,6 +32,7 @@ import SavingsScreen from "./src/screens/SavingsScreen";
 import { useDashboardTheme } from "./src/components/dashboard/useDashboardTheme";
 import type { DashboardData } from "./src/utils/dashboard";
 
+import ChatBudgetSetupScreen from "./src/screens/ChatBudgetSetupScreen";
 import AIChatScreen from "./src/screens/AIChatScreen";
 import FinancialPlansScreen from "./src/screens/FinancialPlansScreen";
 import type { PlanningProfile } from "./src/types/plans";
@@ -56,6 +57,7 @@ function PocketPilotApp() {
     | "savings"
     | "history"
     | "aiInsights"
+    | "chatBudgetSetup"
     | "aiChat"
     | "financialPlans"
     | "settings";
@@ -68,8 +70,8 @@ function PocketPilotApp() {
   const settingsReturn = useRef<Screen>("dashboard");
   const openSettings = () => { settingsReturn.current = screen; setScreen("settings"); };
 
-  const API_BASE_URL = "http://192.168.1.16:8000";
-  const chatSession = useChatSession(API_BASE_URL);
+const API_BASE_URL = "http://192.168.1.16:8000";
+const chatSession = useChatSession(API_BASE_URL);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -131,7 +133,7 @@ function PocketPilotApp() {
   useEffect(() => {
     // Called when any request is rejected with 401 (expired or invalid token)
     setSessionExpiredHandler(() => {
-      const signedInScreens: Screen[] = ["dashboard", "spending", "debt", "savings", "history", "aiInsights", "aiChat", "financialPlans", "settings"];
+      const signedInScreens: Screen[] = ["dashboard", "spending", "debt", "savings", "history", "aiInsights", "aiChat", "chatBudgetSetup", "financialPlans", "settings"];
 
       // Ignore late responses once the user is already signed out
       if (!signedInScreens.includes(screenRef.current)) return;
@@ -241,8 +243,15 @@ function PocketPilotApp() {
     }} />;
   }
 
+  if (screen === "chatBudgetSetup") {
+    return <ChatBudgetSetupScreen apiBaseUrl={API_BASE_URL} onCancel={() => setScreen("aiChat")} onSaved={saved => {
+      setSpending(saved); setScreen("aiChat");
+      void chatSession.send("I have saved my monthly budget. Please fetch it and continue with the goal we were discussing, using its planned category amounts.", undefined, undefined, true);
+    }} />;
+  }
+
   if (screen === "aiChat") {
-    return withNavigation(<AIChatScreen apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setScreen("financialPlans"); }} session={chatSession} />);
+    return withNavigation(<AIChatScreen onSetupBudget={() => setScreen("chatBudgetSetup")} apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setScreen("financialPlans"); }} session={chatSession} />);
   }
 
   if (screen === "financialPlans") {

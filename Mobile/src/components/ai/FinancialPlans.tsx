@@ -8,8 +8,9 @@ import { navigationStyles } from "../../styles/NavigationStyles";
 import BackButton from "../BackButton";
 import FinancialPlanCard from "./FinancialPlanCard";
 import PlanningForm from "./PlanningForm";
+import BudgetPlanEditor from "./BudgetPlanEditor";
 import { FinancialPlan, PlanningContext, PlanningProfile } from "../../types/plans";
-import { getPlanningContext, getPlans, planningRequest, savePlan } from "../../services/planningService";
+import { getPlanningContext, getPlans, planningRequest, savePlan, confirmBudgetPlan } from "../../services/planningService";
 import { SessionExpiredError } from "../../services/apiClient";
 
 type Props = { apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onStartPlanning: () => void; initialProfile?: PlanningProfile };
@@ -35,7 +36,7 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
   const save = async () => {
     if (!preview || busy) return; setBusy(true); setError("");
     try {
-      const saved = await savePlan(apiBaseUrl, preview.profile, editing?.id);
+      const saved = preview.budgetGoalSource ? await confirmBudgetPlan(apiBaseUrl, preview, editing?.id) : await savePlan(apiBaseUrl, preview.profile, editing?.id);
       onPreview(saved); setPlans(rows => [...rows.filter(row => row.id !== saved.id), saved]);
       setSelected(saved); setEditing(null); setPreview(null);
     } catch (err) { if (!(err instanceof SessionExpiredError)) setError((err as Error).message); }
@@ -57,6 +58,7 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
     {(inDetails || inForm) && <BackButton onPress={back} disabled={busy || formBusy} label={inForm && selected ? "Back to plan" : "Back to plans"} />}
     <View style={styles.cardTitleBlock}><Text style={styles.eyebrow}>Your finances</Text><Text style={styles.title}>{inForm ? editing?.id ? "Edit plan" : "Create a Plan" : inDetails ? "Plan details" : "My Financial Plans"}</Text></View>
   </View>;
+  if (inForm && selected?.budgetGoalSource) return <View style={s.plansContainer}>{header}<ScrollView contentContainerStyle={s.content}><BudgetPlanEditor plan={selected} apiBaseUrl={apiBaseUrl} onBusyChange={setFormBusy} onCancel={() => { setEditing(null); setError(""); }} onPreview={plan => { setPreview(plan); onPreview(plan); }} /></ScrollView></View>;
   if (inForm && context) return <View style={s.plansContainer}>
     {header}
     <PlanningForm key={editing?.id ?? "new"} apiBaseUrl={apiBaseUrl} context={context} initial={editing?.profile} onBusyChange={setFormBusy} onCancel={() => { setEditing(null); setError(""); }} onPreview={plan => { setPreview(plan); onPreview(plan); }} />

@@ -4,6 +4,8 @@ from conftest import register_user, login_user, auth_headers
 from app.models.income import MonthlyIncome
 from app.models.transaction import Transaction
 from app.models.debt import Debt
+from app.models.debt_payment import DebtPayment
+from uuid import uuid4
 from app.models.savings import MonthlySavings
 
 
@@ -31,13 +33,17 @@ def test_confirm_double_count_and_idempotent_update(api_client, db_session):
     assert api_client.put("/savings/confirm", json=BODY, headers=auth).json()["saved"] == 3000
     assert api_client.put("/savings/confirm", json=BODY, headers=auth).json()["saved"] == 3000
     assert db_session.query(MonthlySavings).count() == 1
-    assert api_client.put("/savings/confirm", json={**BODY, "extra_debt_payments": 500}, headers=auth).json()["saved"] == 2500
+    db_session.add(DebtPayment(user_id=1, debt_id=1, debt_name="Loan", amount_cents=50000, paid_on=date(2020, 1, 12), request_key=str(uuid4())))
+    db_session.commit()
+    assert api_client.put("/savings/confirm", json={**BODY, "expected_debt_payments": 500}, headers=auth).json()["saved"] == 2500
     assert api_client.get("/savings?year=2020&month=1", headers=auth).json()["total_saved"] == 2500
 
 
 def test_shortfall_and_income_missing(api_client, db_session):
     auth = setup(api_client, db_session)
-    row = api_client.put("/savings/confirm", json={**BODY, "extra_debt_payments": 4000}, headers=auth).json()
+    db_session.add(DebtPayment(user_id=1, debt_id=1, debt_name="Loan", amount_cents=400000, paid_on=date(2020, 1, 12), request_key=str(uuid4())))
+    db_session.commit()
+    row = api_client.put("/savings/confirm", json={**BODY, "expected_debt_payments": 4000}, headers=auth).json()
     assert row["saved"] == 0 and row["leftover"] == -1000
     assert api_client.put("/savings/confirm", json={**BODY, "month": 2}, headers=auth).status_code == 422
 
