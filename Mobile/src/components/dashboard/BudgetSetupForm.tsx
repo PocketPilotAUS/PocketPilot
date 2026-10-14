@@ -1,3 +1,4 @@
+import { amountDraft, toAED, formatDraftMoney, baseMoneyDraft } from "../../preferences/currency";
 import React, { useRef, useState } from "react";
 import { Pressable } from "react-native";
 import { Text, TextInput, View } from "../../preferences/LocalizedNative";
@@ -8,7 +9,7 @@ import { createBudgetSetupStyles } from "../../styles/BudgetSetupStyles";
 import { createAddExpenseStyles } from "../../styles/AddExpenseStyles";
 import { saveBudgetSetup } from "../../services/budgetService";
 import { SessionExpiredError } from "../../services/apiClient";
-import { DashboardData, formatAED, monthName } from "../../utils/dashboard";
+import { DashboardData, monthName } from "../../utils/dashboard";
 import { BudgetCategoryDraft, validateBudgetSetup } from "../../utils/budgetSetup";
 import { EXPENSE_CATEGORIES, sanitizeAmount } from "../../utils/addExpense";
 
@@ -16,8 +17,8 @@ type Props = { data: DashboardData; apiBaseUrl: string; onSaved: (data: Dashboar
 export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel }: Props) {
   const { palette } = useDashboardTheme(); const s = createBudgetSetupStyles(palette);
   const add = createAddExpenseStyles(palette);
-  const [income, setIncome] = useState(data.income == null ? "" : String(data.income));
-  const [categories, setCategories] = useState<BudgetCategoryDraft[]>(() => data.ideal_budget?.allocations.map(row => ({ name: row.category, amount: row.target == null ? "" : String(row.target) })) ?? []);
+  const [income, setIncome] = useState(data.income == null ? "" : amountDraft(data.income));
+  const [categories, setCategories] = useState<BudgetCategoryDraft[]>(() => data.ideal_budget?.allocations.map(row => ({ name: row.category, amount: row.target == null ? "" : amountDraft(row.target) })) ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   const [customName, setCustomName] = useState("");
   const [categoryAmount, setCategoryAmount] = useState("");
@@ -35,7 +36,7 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel }:
     if (selected === null || busy) return;
     const name = selected === "" ? customName.trim() : selected;
     const row = { name, amount: categoryAmount.trim() };
-    const problem = validateBudgetSetup("0", [row]);
+    const problem = validateBudgetSetup("0", [{ ...row, amount: baseMoneyDraft(row.amount) }]);
     if (problem) { setError(problem); return; }
     const existing = categories.findIndex(item => item.name.toLowerCase() === name.toLowerCase());
     if (selected === "" && existing >= 0) { setError("This category is already in your budget. Tap its tile to edit the amount."); return; }
@@ -45,10 +46,10 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel }:
   };
   const save = async () => {
     if (locked.current) return;
-    const problem = validateBudgetSetup(income, categories);
+    const problem = validateBudgetSetup(baseMoneyDraft(income), categories.map(row => ({ ...row, amount: baseMoneyDraft(row.amount) })));
     if (problem) { setError(problem); setReview(false); return; }
     locked.current = true; setBusy(true); setError("");
-    try { onSaved(await saveBudgetSetup(apiBaseUrl, data.year, data.month, income.trim(), categories.map(row => ({ name: row.name.trim(), amount: row.amount.trim() })))); }
+    try { onSaved(await saveBudgetSetup(apiBaseUrl, data.year, data.month, String(toAED(income, data.income)), categories.map(row => ({ name: row.name.trim(), amount: String(toAED(row.amount, data.ideal_budget?.allocations.find(old => old.category === row.name)?.target)) })))); }
     catch (err) { if (!(err instanceof SessionExpiredError)) setError(err instanceof Error ? err.message : "Could not save your budget. Please try again."); }
     finally { locked.current = false; setBusy(false); }
   };
@@ -82,18 +83,18 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel }:
         <Text style={s.label}>Your budget categories</Text>
         {categories.map((row, i) => <View key={row.name} style={s.selectedCategoryRow}>
           <CategoryIcon category={row.name} />
-          <Pressable style={s.selectedCategoryDetails} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Text style={s.label}>{row.name}</Text><Text style={s.text}>{formatAED(Number(row.amount || 0))} / month</Text></Pressable>
+          <Pressable style={s.selectedCategoryDetails} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Text style={s.label}>{row.name}</Text><Text style={s.text}>{formatDraftMoney(Number(row.amount || 0))} / month</Text></Pressable>
           <Pressable style={s.remove} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Pencil size={17} color={palette.textSecondary} /></Pressable>
           <Pressable style={s.remove} accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={() => { setCategories(rows => rows.filter((_, index) => index !== i)); if (selected === row.name) setSelected(null); }}><Trash2 size={17} color={palette.danger} /></Pressable>
         </View>)}
       </View>}
       {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
-      <Pressable style={s.button} onPress={() => { if (selected !== null) { setError("Add or update the selected category before reviewing your budget."); return; } const problem = validateBudgetSetup(income, categories); setError(problem ?? ""); if (!problem) setReview(true); }}><Text style={s.buttonText}>Review my budget</Text></Pressable>
+      <Pressable style={s.button} onPress={() => { if (selected !== null) { setError("Add or update the selected category before reviewing your budget."); return; } const problem = validateBudgetSetup(baseMoneyDraft(income), categories.map(row => ({ ...row, amount: baseMoneyDraft(row.amount) }))); setError(problem ?? ""); if (!problem) setReview(true); }}><Text style={s.buttonText}>Review my budget</Text></Pressable>
     </> : <>
-      {categories.map((row, i) => <View key={i} style={s.row}><Text style={s.label}>{row.name}</Text><Text style={s.text}>{formatAED(Number(row.amount))}</Text></View>)}
-      <Text style={s.text}>Monthly income: {formatAED(Number(income))}</Text>
-      <Text style={s.text}>Planned monthly spending: {formatAED(total)}</Text>
-      <Text style={left < 0 ? s.error : s.positive}>{left < 0 ? "Budget exceeds income by" : "Income left after your budget"}: {formatAED(Math.abs(left))}</Text>
+      {categories.map((row, i) => <View key={i} style={s.row}><Text style={s.label}>{row.name}</Text><Text style={s.text}>{formatDraftMoney(Number(row.amount))}</Text></View>)}
+      <Text style={s.text}>Monthly income: {formatDraftMoney(Number(income))}</Text>
+      <Text style={s.text}>Planned monthly spending: {formatDraftMoney(total)}</Text>
+      <Text style={left < 0 ? s.error : s.positive}>{left < 0 ? "Budget exceeds income by" : "Income left after your budget"}: {formatDraftMoney(Math.abs(left))}</Text>
       <Text style={s.text}>Saving creates your budget targets. It does not record paid expenses or money saved.</Text>
       {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
       <Pressable style={[s.button, busy && s.disabled]} disabled={busy} onPress={() => { void save(); }}><Text style={s.buttonText}>{busy ? "Saving…" : "Save my budget"}</Text></Pressable>

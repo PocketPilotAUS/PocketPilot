@@ -1,3 +1,4 @@
+import { amountDraft, toAED } from "../preferences/currency";
 import React, { useEffect, useState } from "react";
 import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import MetallicGlassCard from "./MetallicGlassCard";
@@ -31,10 +32,10 @@ export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUr
   }, [apiBaseUrl, refresh]);
   const update = async (schedule: Schedule, stop = false) => {
     if (busy) return;
-    if (!stop && (!/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0 || Number(amount) > 1000000000 || !category.trim() || !/^\d{1,2}$/.test(day) || Number(day) < 1 || Number(day) > 31)) { setError("Enter a valid amount, category and payment day (1–31)."); return; }
+    if (!stop && (!/^\d+(\.\d{1,2})?$/.test(amount) || toAED(amount) <= 0 || toAED(amount) > 1000000000 || !category.trim() || !/^\d{1,2}$/.test(day) || Number(day) < 1 || Number(day) > 31)) { setError("Enter a valid amount, category and payment day (1–31)."); return; }
     setBusy(true); setError("");
     try {
-      const response = await apiFetch(apiBaseUrl, `/recurring/${schedule.id}${stop ? "/stop" : ""}`, stop ? { method: "POST" } : { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount, category: category.trim(), description: schedule.description, day: Number(day) }) });
+      const response = await apiFetch(apiBaseUrl, `/recurring/${schedule.id}${stop ? "/stop" : ""}`, stop ? { method: "POST" } : { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: String(toAED(amount, schedule.amount)), category: category.trim(), description: schedule.description, day: Number(day) }) });
       if (!response.ok) throw new Error();
       const saved: Schedule = await response.json();
       setSchedules(current => current.map(item => item.id === saved.id ? saved : item)); setEditing(null); onChanged();
@@ -57,7 +58,7 @@ export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUr
         <MetallicGlassButton title={busy ? "Saving…" : "Save Changes"} onPress={() => { void update(schedule); }} disabled={busy} />
         <MetallicGlassButton title="Cancel" variant="secondary" onPress={() => setEditing(null)} disabled={busy} />
       </> : schedule.active && <>
-        <MetallicGlassButton title="Edit Schedule" variant="secondary" onPress={() => { setEditing(schedule.id); setAmount(String(schedule.amount)); setCategory(schedule.category); setDay(String(schedule.day)); }} disabled={busy} />
+        <MetallicGlassButton title="Edit Schedule" variant="secondary" onPress={() => { setEditing(schedule.id); setAmount(amountDraft(schedule.amount)); setCategory(schedule.category); setDay(String(schedule.day)); }} disabled={busy} />
         <MetallicGlassButton title="Stop Repeating" variant="danger" onPress={() => Alert.alert("Stop repeating?", "Future payments will stop. Previously recorded expenses remain.", [{ text: "Cancel", style: "cancel" }, { text: "Stop", style: "destructive", onPress: () => { void update(schedule, true); } }])} disabled={busy} />
       </>}
     </MetallicGlassCard>)}

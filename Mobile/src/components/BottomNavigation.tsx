@@ -2,18 +2,19 @@ import React, { useEffect, useState } from "react";
 import { Keyboard, Pressable } from "react-native";
 import { Text, View } from "../preferences/LocalizedNative";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Home, History, Sparkles, ChartNoAxesCombined } from "lucide-react-native";
+import { Home, History, Sparkles, Target, ChartNoAxesCombined } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppTheme } from "../theme/ThemeContext";
 import { createBottomNavigationStyles } from "../styles/BottomNavigationStyles";
 import { usePreferences } from "../preferences/PreferencesContext";
 
-export type AppTab = "dashboard" | "history" | "aiChat" | "aiInsights";
+export type AppTab = "dashboard" | "history" | "aiChat" | "financialPlans" | "aiInsights";
 // Transactions combines the list and the add form in one destination.
 const tabs = [
   { screen: "dashboard", label: "home", icon: Home },
   { screen: "history", label: "transactions", icon: History },
   { screen: "aiChat", label: "chat", icon: Sparkles },
+  { screen: "financialPlans", label: "plans", icon: Target },
   { screen: "aiInsights", label: "insights", icon: ChartNoAxesCombined },
 ] as const;
 

@@ -4,10 +4,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar } from "react-native";
 import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ArrowUp, CloudOff, MessageCircle, RefreshCw, Sparkles, SquarePen, Target } from "lucide-react-native";
+import { ArrowUp, CloudOff, RefreshCw, Sparkles, SquarePen } from "lucide-react-native";
 
 import ChatWelcome from "../components/ai/ChatWelcome";
-import FinancialPlans from "../components/ai/FinancialPlans";
 import FormattedMessage from "../components/ai/FormattedMessage";
 import ProposalCard from "../components/ai/ProposalCard";
 import TypingIndicator from "../components/ai/TypingIndicator";
@@ -21,16 +20,14 @@ import type useChatSession from "../hooks/useChatSession";
 
 type Props = {
   apiBaseUrl: string;
-  onBack: () => void;
+  onReviewProfile: (profile: PlanningProfile) => void;
   session: ReturnType<typeof useChatSession>;
 };
 
-type Section = "chat" | "plans";
 
 
-const GOAL_PROMPT = "Help me plan how to save for a goal by a specific date.";
 
-export default function AIChatScreen({ apiBaseUrl, session }: Props) {
+export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile }: Props) {
   const { messages, onMessagesChange, draft, setDraft, busy, pendingQuestion, error, setError } = session;
   const send = (question = draft) => {
     if (proposalLock.current || session.savingPlan !== null) return;
@@ -38,8 +35,6 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
   };
   const { ai, styles, palette, mode } = useAITheme();
 
-  const [reviewProfile, setReviewProfile] = useState<PlanningProfile | undefined>(undefined);
-  const [section, setSection] = useState<Section>("chat");
   const [savingProposal, setSavingProposal] = useState<string | null>(null);
 
   const proposalLock = useRef(false);
@@ -99,11 +94,6 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
     ]);
   };
 
-  const startPlanning = () => {
-    setSection("chat");
-    setDraft(GOAL_PROMPT);
-  };
-
   const canSend = !busy && session.savingPlan === null && savingProposal === null && draft.trim().length > 0;
   const showWelcome = messages.length === 0 && pendingQuestion === null;
 
@@ -127,7 +117,7 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
         </View>
         <View style={[ai.bubble, ai.assistantBubble]}>
           <FormattedMessage content={message.content} />
-          {message.planningProfile && <Pressable onPress={() => { setReviewProfile(message.planningProfile); setSection("plans"); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
+          {message.planningProfile && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
           {message.plan && <FinancialPlanCard plan={message.plan} busy={busy || session.savingPlan !== null} onSave={!message.plan.id ? () => { void session.saveFinancialPlan(message.plan!, index); } : undefined} />}
           {proposal && (
             <ProposalCard
@@ -177,7 +167,7 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
             <Text style={styles.title}>Assistant</Text>
           </View>
 
-          {section === "chat" && messages.length > 0 && (
+          {messages.length > 0 && (
             <Pressable
               onPress={startNewChat}
               disabled={busy || savingProposal !== null || session.savingPlan !== null}
@@ -191,35 +181,8 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
           )}
         </View>
 
-        <View style={ai.segmented} accessibilityRole="tablist">
-          {([
-            { key: "chat", label: "AI Chat", Icon: MessageCircle },
-            { key: "plans", label: "My Financial Plans", Icon: Target },
-          ] as const).map(({ key, label, Icon }) => {
-            const active = section === key;
-
-            return (
-              <Pressable
-                key={key}
-                onPress={() => { if (key === "plans") setReviewProfile(undefined); setSection(key); }}
-                style={[ai.segment, active && ai.segmentActive]}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: active }}
-              >
-                <Icon size={15} color={active ? palette.accent : palette.textSecondary} strokeWidth={2.2} />
-                <Text style={[ai.segmentText, active && ai.segmentTextActive]} numberOfLines={1}>
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
       </View>
 
-      {section === "plans" ? (
-        // Saved plans and the guided form share the confirmed planning profile.
-        <FinancialPlans apiBaseUrl={apiBaseUrl} initialProfile={reviewProfile} onPreview={session.addPlanPreview} onStartPlanning={startPlanning} />
-      ) : (
         <KeyboardAvoidingView style={ai.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <ScrollView
             ref={scroll}
@@ -282,7 +245,6 @@ export default function AIChatScreen({ apiBaseUrl, session }: Props) {
           </View>
           <Text style={ai.composerNote}>Conversation kept for this session. Sign out to clear it.</Text>
         </KeyboardAvoidingView>
-      )}
     </SafeAreaView>
   );
 }

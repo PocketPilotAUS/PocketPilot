@@ -1,3 +1,4 @@
+import { amountDraft, toAED } from "../preferences/currency";
 import React, { useEffect, useState } from "react";
 import { Text, TextInput, View } from "../preferences/LocalizedNative";
 import MetallicGlassCard from "./MetallicGlassCard";
@@ -16,13 +17,13 @@ export default function MonthlyIncomeCard({ budget, loading, apiBaseUrl, onSaved
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { setDraft(budget?.income == null ? "" : String(budget.income)); }, [budget]);
+  useEffect(() => { setDraft(budget?.income == null ? "" : amountDraft(budget.income)); }, [budget]);
   const save = async () => {
-    if (!/^\d+(\.\d{1,2})?$/.test(draft.trim()) || Number(draft) > 1000000000) { setError("Enter an income of 0 to 1,000,000,000 AED with up to two decimal places."); return; }
+    if (!/^\d+(\.\d{1,2})?$/.test(draft.trim()) || toAED(draft) > 1000000000) { setError("Enter an income of 0 to 1,000,000,000 AED with up to two decimal places."); return; }
     if (!budget) return;
     setSaving(true); setError("");
     try {
-      const response = await apiFetch(apiBaseUrl, `/budget/income?year=${budget.year}&month=${budget.month}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: draft.trim() }) });
+      const response = await apiFetch(apiBaseUrl, `/budget/income?year=${budget.year}&month=${budget.month}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: String(toAED(draft, budget.income)) }) });
       if (!response.ok) throw new Error("save");
       onSaved(await response.json()); setEditing(false);
     } catch (err) { if (!(err instanceof SessionExpiredError)) setError("Could not save income. Please try again."); }
@@ -43,7 +44,7 @@ export default function MonthlyIncomeCard({ budget, loading, apiBaseUrl, onSaved
       {editing ? <>
         <TextInput accessibilityLabel="Monthly income in AED" style={styles.input} value={draft} onChangeText={setDraft} keyboardType="decimal-pad" placeholder="Monthly income in AED" placeholderTextColor={colors.textMuted} editable={!saving} />
         <MetallicGlassButton title={saving ? "Saving…" : "Save Income"} onPress={() => { void save(); }} disabled={saving} />
-        <MetallicGlassButton title="Cancel" variant="secondary" onPress={() => { setEditing(false); setError(""); setDraft(budget.income == null ? "" : String(budget.income)); }} disabled={saving} />
+        <MetallicGlassButton title="Cancel" variant="secondary" onPress={() => { setEditing(false); setError(""); setDraft(budget.income == null ? "" : amountDraft(budget.income)); }} disabled={saving} />
       </> : <MetallicGlassButton title={budget.income == null ? "Add Monthly Income" : "Edit Income"} variant="secondary" onPress={() => setEditing(true)} style={styles.button} />}
       {!!error && <Text style={styles.error}>{error}</Text>}
     </>}

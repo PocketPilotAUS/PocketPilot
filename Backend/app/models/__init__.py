@@ -12,3 +12,5 @@ from app.models.budget_plan import BudgetPlan
 
 from app.models.financial_plan import PlanningProfile, FinancialPlan
 from app.models.account_settings import AccountSettings
+from app.models.debt import Debt
+from app.models.savings import MonthlySavings

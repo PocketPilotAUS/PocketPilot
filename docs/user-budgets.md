@@ -1,6 +1,6 @@
 # User-created monthly budgets
 
-Home shows Create your budget until the current user saves a budget for the displayed month. Recording income alone does not create allocations. Setup uses the same category icons and tile styling as Add Expense. Tapping a tile opens a monthly amount editor; Add to budget includes it and marks the tile with a check. Existing categories can be edited or removed. Add my own category collects a custom name and monthly amount, then makes that category available as a tile. There are no default selections or spending targets in the new flow.
+Open Spending from Home to find the spending breakdown and Budget Tracker. Spending shows Create your budget until the current user saves a budget for the displayed month. Recording income alone does not create allocations. Setup uses the same category icons and tile styling as Add Expense. Tapping a tile opens a monthly amount editor; Add to budget includes it and marks the tile with a check. Existing categories can be edited or removed. Add my own category collects a custom name and monthly amount, then makes that category available as a tile. There are no default selections or spending targets in the new flow.
 
 Users enter monthly income and usual monthly amounts, review the total and available income or shortfall, then save. Saved amounts are targets, not paid expense records or savings transfers. A budget can exceed income; the review and tracker explicitly show the shortfall.
 

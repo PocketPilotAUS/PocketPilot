@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
 import type { ChatMessage, Proposal } from "../types/chat";
 import { getRuntimeLanguage } from "../preferences/localize";
+import { getCurrencyPreference } from "../preferences/currency";
 export type ChatError = { title: string; message: string; retry: boolean };
 
 // Owned by the app, not the tab: navigation must not cancel an active reply.
@@ -56,7 +57,8 @@ export default function useChatSession(apiBaseUrl: string) {
       history = history.slice(2);
     }
 
-    const pending: ChatMessage = { role: "user", content: question.trim() };
+    const selectedCurrency = getCurrencyPreference();
+    const pending: ChatMessage = { role: "user", content: question.trim(), currency: selectedCurrency.currency };
 
     try {
       const response = await apiFetch(apiBaseUrl, "/ai/chat", {
@@ -64,11 +66,13 @@ export default function useChatSession(apiBaseUrl: string) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           language: getRuntimeLanguage(),
+          currency: selectedCurrency.currency,
+          ...(selectedCurrency.currency === "CNY" ? { aed_to_cny: selectedCurrency.rate!.aedToCny } : {}),
           ...(reviewBudget ? { review_budget: reviewBudget } : {}),
           planning_profile: [...messages].reverse().find(message => message.planningProfile || message.plan)?.planningProfile ?? [...messages].reverse().find(message => message.planningProfile || message.plan)?.plan?.profile,
           messages: [...history, pending].map(({ role, content, ...rest }) => ({
             role,
-            content: content + (rest.proposal ? `\n[Record status: ${rest.proposal.status}; details: ${JSON.stringify(rest.proposal)}]` : ""),
+            content: content + (role === "user" ? `\n[Currency for untagged amounts in this message: ${rest.currency ?? "AED"}]` : "") + (rest.proposal ? `\n[Record status: ${rest.proposal.status}; details: ${JSON.stringify(rest.proposal)}]` : ""),
           })),
         }),
         signal: request.signal,

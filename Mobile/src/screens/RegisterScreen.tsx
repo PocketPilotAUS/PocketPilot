@@ -3,7 +3,9 @@ import React, { useState } from "react";
 import { ScrollView, KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, StatusBar } from "react-native";
 import { View, Text, TextInput } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ArrowLeft, Eye, EyeOff } from "lucide-react-native";
+import { Eye, EyeOff } from "lucide-react-native";
+import BackButton from "../components/BackButton";
+import { navigationStyles } from "../styles/NavigationStyles";
 
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
 import AmbientBackground from "../components/AmbientBackground";
@@ -106,21 +108,7 @@ export default function RegisterScreen({
           keyboardShouldPersistTaps="handled"
         >
           {/* Back Button */}
-          <Pressable
-            onPress={onBack}
-            style={styles.backButton}
-            accessibilityRole="button"
-            accessibilityLabel="Back to welcome"
-          >
-            <ArrowLeft
-              size={22}
-              color={colors.text}
-            />
-
-            <Text style={styles.backText}>
-              Back
-            </Text>
-          </Pressable>
+          <View style={navigationStyles.toolbar}><BackButton onPress={onBack} label="Back to welcome" colors={{ text: colors.text, surface: colors.surfaceElevated, border: colors.border }} /></View>
 
           {/* Header */}
           <Text style={styles.eyebrow}>

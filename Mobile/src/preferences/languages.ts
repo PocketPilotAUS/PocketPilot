@@ -22,7 +22,7 @@ export const LANGUAGES = [
   { code: "it", name: "Italian", native: "Italiano" },
 ] as const;
 export type Language = typeof LANGUAGES[number]["code"];
-export type Label = "settings" | "personal" | "language" | "currency" | "preferences" | "light" | "dark" | "home" | "history" | "chat" | "add" | "insights" | "back" | "transactions";
+export type Label = "settings" | "personal" | "language" | "currency" | "preferences" | "light" | "dark" | "home" | "history" | "chat" | "add" | "insights" | "back" | "transactions" | "plans";
 const keys: Label[] = ["settings", "personal", "language", "currency", "preferences", "light", "dark", "home", "history", "chat", "add", "insights", "back"];
 const translations: Record<Language, string[]> = {
   en: ["Settings", "Personal Details", "Language", "Currency", "Preferences", "Light mode", "Dark mode", "Home", "History", "AI Chat", "Add", "Insights", "Back"],
@@ -53,7 +53,14 @@ const transactionsLabels: Record<Language, string> = {
   id: "Transaksi", de: "Transaktionen", ja: "取引", tr: "İşlemler", vi: "Giao dịch",
   ko: "거래", ta: "பரிவர்த்தனைகள்", te: "లావాదేవీలు", mr: "व्यवहार", pa: "ਲੈਣ-ਦੇਣ", it: "Transazioni",
 };
+const plansLabels: Record<Language, string> = {
+  en: "Plans", zh: "计划", hi: "योजनाएँ", es: "Planes", fr: "Plans",
+  ar: "الخطط", bn: "পরিকল্পনা", pt: "Planos", ru: "Планы", ur: "منصوبے",
+  id: "Rencana", de: "Pläne", ja: "プラン", tr: "Planlar", vi: "Kế hoạch",
+  ko: "계획", ta: "திட்டங்கள்", te: "ప్రణాళికలు", mr: "योजना", pa: "ਯੋਜਨਾਵਾਂ", it: "Piani",
+};
 export function translate(language: Language, key: Label) {
+  if (key === "plans") return plansLabels[language];
   if (key === "transactions") return transactionsLabels[language];
   return translations[language][keys.indexOf(key)] ?? translations.en[keys.indexOf(key)];
 }

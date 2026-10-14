@@ -1,3 +1,4 @@
+import { amountDraft, toAED } from "../../preferences/currency";
 import React, { useState } from "react";
 import { Pressable, ScrollView } from "react-native";
 import { Text, TextInput, View } from "../../preferences/LocalizedNative";
@@ -69,8 +70,8 @@ export default function TransactionFilters({ filters, categories, today, onChang
   const openAmount = () => {
     const amount = filters.amount;
     setAmountKind(amount.kind);
-    setMinDraft(amount.kind === "above" || amount.kind === "between" ? String(amount.min) : "");
-    setMaxDraft(amount.kind === "below" || amount.kind === "between" ? String(amount.max) : "");
+    setMinDraft(amount.kind === "above" || amount.kind === "between" ? amountDraft(amount.min) : "");
+    setMaxDraft(amount.kind === "below" || amount.kind === "between" ? amountDraft(amount.max) : "");
     setAmountError("");
     setSheet("amount");
   };
@@ -83,7 +84,7 @@ export default function TransactionFilters({ filters, categories, today, onChang
       return;
     }
 
-    update({ amount: result });
+    update({ amount: result.kind === "above" ? { ...result, min: toAED(result.min) } : result.kind === "below" ? { ...result, max: toAED(result.max) } : result.kind === "between" ? { ...result, min: toAED(result.min), max: toAED(result.max) } : result });
     setSheet(null);
   };
 

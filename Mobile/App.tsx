@@ -21,15 +21,20 @@ import { ThemeProvider } from "./src/theme/ThemeContext";
 import { TriangleAlert, Settings } from "lucide-react-native";
 import KeyboardFormScrollView from "./src/components/KeyboardFormScrollView";
 import BottomNavigation, { AppTab } from "./src/components/BottomNavigation";
+import CurrencyNotice from "./src/components/CurrencyNotice";
 import AmbientBackground from "./src/components/AmbientBackground";
 import AnimatedWelcome from "./src/components/AnimatedWelcome";
 import FinancialOverview from "./src/components/dashboard/FinancialOverview";
-import SpendingBreakdown from "./src/components/dashboard/SpendingBreakdown";
-import BudgetTracker from "./src/components/dashboard/BudgetTracker";
+import HomeSections from "./src/components/dashboard/HomeSections";
+import SpendingScreen from "./src/screens/SpendingScreen";
+import DebtScreen from "./src/screens/DebtScreen";
+import SavingsScreen from "./src/screens/SavingsScreen";
 import { useDashboardTheme } from "./src/components/dashboard/useDashboardTheme";
 import type { DashboardData } from "./src/utils/dashboard";
 
 import AIChatScreen from "./src/screens/AIChatScreen";
+import FinancialPlansScreen from "./src/screens/FinancialPlansScreen";
+import type { PlanningProfile } from "./src/types/plans";
 import AIInsightsScreen from "./src/screens/AIInsightsScreen";
 import TransactionsScreen from "./src/screens/TransactionsScreen";
 
@@ -37,7 +42,7 @@ import { createAppStyles } from "./src/styles/AppStyles";
 import { useAppTheme } from "./src/theme/ThemeContext";
 
 function PocketPilotApp() {
-  const { t, language } = usePreferences();
+  const { t, language, ready: preferencesReady } = usePreferences();
   const { colors, mode } = useAppTheme();
   const styles = createAppStyles(colors);
   const dashboard = useDashboardTheme();
@@ -46,11 +51,16 @@ function PocketPilotApp() {
     | "login"
     | "register"
     | "dashboard"
+    | "spending"
+    | "debt"
+    | "savings"
     | "history"
     | "aiInsights"
     | "aiChat"
+    | "financialPlans"
     | "settings";
 
+  const [reviewProfile, setReviewProfile] = useState<PlanningProfile | undefined>();
   const [screen, setScreen] = useState<Screen>("welcome");
   const [startAddingTransaction, setStartAddingTransaction] = useState(false);
   const openAddTransaction = () => { setStartAddingTransaction(true); setScreen("history"); };
@@ -58,7 +68,7 @@ function PocketPilotApp() {
   const settingsReturn = useRef<Screen>("dashboard");
   const openSettings = () => { settingsReturn.current = screen; setScreen("settings"); };
 
-  const API_BASE_URL = "http://192.168.1.240:8000";
+  const API_BASE_URL = "http://10.25.144.248:8000";
   const chatSession = useChatSession(API_BASE_URL);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -77,6 +87,7 @@ function PocketPilotApp() {
     try {
       await logout();
       chatSession.reset();
+      setReviewProfile(undefined);
       setCurrentUser(null);
       setSpending(null);
       setScreen("welcome");
@@ -120,7 +131,7 @@ function PocketPilotApp() {
   useEffect(() => {
     // Called when any request is rejected with 401 (expired or invalid token)
     setSessionExpiredHandler(() => {
-      const signedInScreens: Screen[] = ["dashboard", "history", "aiInsights", "aiChat", "settings"];
+      const signedInScreens: Screen[] = ["dashboard", "spending", "debt", "savings", "history", "aiInsights", "aiChat", "financialPlans", "settings"];
 
       // Ignore late responses once the user is already signed out
       if (!signedInScreens.includes(screenRef.current)) return;
@@ -128,6 +139,7 @@ function PocketPilotApp() {
       // Updated immediately so simultaneous 401s show only one alert
       screenRef.current = "login";
       chatSession.reset();
+      setReviewProfile(undefined);
       setCurrentUser(null);
       setSpending(null);
       setScreen("login");
@@ -142,7 +154,7 @@ function PocketPilotApp() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "dashboard") return;
+    if (screen !== "dashboard" && screen !== "spending") return;
 
     // Set when the user leaves the dashboard (e.g. logs out), so a late
     // response can never show one user's totals to the next user
@@ -184,10 +196,11 @@ function PocketPilotApp() {
   const withNavigation = (content: React.ReactNode) => (
     <View style={styles.container}>
       <View style={styles.container}>{content}</View>
-      <BottomNavigation active={screen as AppTab} onSelect={tab => { setStartAddingTransaction(false); setScreen(tab); }} />
+      <CurrencyNotice />
+      <BottomNavigation active={screen === "spending" || screen === "debt" || screen === "savings" ? "dashboard" : screen as AppTab} onSelect={tab => { setStartAddingTransaction(false); if (tab === "financialPlans" && screen !== tab) setReviewProfile(undefined); setScreen(tab); }} />
     </View>
   );
-  if (checkingSession) {
+  if (checkingSession || !preferencesReady) {
     return (
       <SafeAreaView style={styles.container}>
         <AmbientBackground />
@@ -224,12 +237,21 @@ function PocketPilotApp() {
 
   if (screen === "settings") {
     return <SettingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen(settingsReturn.current)} onUpdated={setCurrentUser} onLogout={handleLogout} onPasswordChanged={async () => {
-      await logout(); chatSession.reset(); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
+      await logout(); chatSession.reset(); setReviewProfile(undefined); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
     }} />;
   }
 
   if (screen === "aiChat") {
-    return withNavigation(<AIChatScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} session={chatSession} />);
+    return withNavigation(<AIChatScreen apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setScreen("financialPlans"); }} session={chatSession} />);
+  }
+
+  if (screen === "financialPlans") {
+    return withNavigation(<FinancialPlansScreen
+      apiBaseUrl={API_BASE_URL}
+      initialProfile={reviewProfile}
+      onPreview={chatSession.addPlanPreview}
+      onStartPlanning={() => { chatSession.setDraft("Help me plan how to save for a goal by a specific date."); setScreen("aiChat"); }}
+    />);
   }
 
   if (screen === "aiInsights") {
@@ -244,6 +266,23 @@ function PocketPilotApp() {
         initiallyAdding={startAddingTransaction}
       />
     );
+  }
+
+  if (screen === "spending") {
+    return withNavigation(<SpendingScreen
+      data={spending} loading={loading} error={error} apiBaseUrl={API_BASE_URL}
+      onBack={() => setScreen("dashboard")} onAddExpense={openAddTransaction}
+      onSaved={setSpending} aiBusy={chatSession.busy}
+      onReview={() => { if (!spending?.ideal_budget || chatSession.busy) return; setScreen("aiChat"); void chatSession.send("Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.", { year: spending.year, month: spending.month }); }}
+    />);
+  }
+
+  if (screen === "debt") {
+    return withNavigation(<DebtScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} />);
+  }
+
+  if (screen === "savings") {
+    return withNavigation(<SavingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} />);
   }
 
   if (screen === "welcome") {
@@ -294,19 +333,7 @@ function PocketPilotApp() {
           onSaved={setSpending}
         />
 
-        <SpendingBreakdown
-          data={spending}
-          loading={loading}
-          onAddExpense={openAddTransaction}
-        />
-
-        <BudgetTracker
-          data={spending}
-          apiBaseUrl={API_BASE_URL}
-          onSaved={setSpending}
-          aiBusy={chatSession.busy}
-          onReview={() => { if (!spending?.ideal_budget || chatSession.busy) return; setScreen("aiChat"); void chatSession.send("Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.", { year: spending.year, month: spending.month }); }}
-        />
+        <HomeSections onOpenSpending={() => setScreen("spending")} onOpenDebt={() => setScreen("debt")} onOpenSavings={() => setScreen("savings")} />
 
       </KeyboardFormScrollView>
     </SafeAreaView>

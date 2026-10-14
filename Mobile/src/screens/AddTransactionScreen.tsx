@@ -1,3 +1,4 @@
+import { toAED } from "../preferences/currency";
 import React, { useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, Switch } from "react-native";
 import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
@@ -60,7 +61,7 @@ export default function AddTransactionScreen({ onBack, onSaved, apiBaseUrl, budg
   const saveTransaction = async () => {
     if (saving) return;
 
-    const form = { amount, category, customCategory, description, monthly, paymentDay };
+    const form = { amount: String(toAED(amount)), category, customCategory, description, monthly, paymentDay };
     const problem = validateExpense(form);
 
     if (problem) {

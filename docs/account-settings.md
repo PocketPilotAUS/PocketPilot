@@ -1,12 +1,12 @@
 # Account settings
 
-Open the gear button on the dashboard or AI screen. Personal details supports name, email and an optional contact phone number. Phone numbers accept spaces, parentheses and hyphens, and are stored as 7 to 15 digits with an optional leading plus. This feature does not verify ownership of email or phone by OTP.
+Open the gear button on Home. Personal details supports name, email and an optional contact phone number. Phone numbers accept spaces, parentheses and hyphens, and are stored as 7 to 15 digits with an optional leading plus. This feature does not verify ownership of email or phone by OTP.
 
 Settings now opens a menu with Personal Details, Language, Currency and Preferences. Each row opens its own section; Back returns to the menu. Personal Details keeps the profile/password API behavior described below and confirms discarding unsaved changes.
 
 Language offers 21 widely spoken languages with search by English or native name. Mandarin and Arabic have local UI catalogs covering forms, dashboard, transactions, planning, placeholders and alerts. Arabic uses right-to-left layout. Other languages currently translate menu headings and bottom navigation only. Language selection is saved per device through AsyncStorage. New AI chat and insights requests include the selected language, so Ollama is instructed to answer in it; existing conversations and user-entered descriptions/goals are preserved. Live model output still needs language-quality review.
 
-Currency currently remains AED only. There is no exchange-rate conversion or relabeling of existing financial records.
+Currency offers AED and Chinese yuan (CNY). Original financial records remain in AED. Selecting CNY converts history, income, budgets, plans and financial display amounts using a dated reference rate; new form amounts are entered in CNY and normalized to AED before saving. The choice and rate are device-local. See `currency-display.md` for rates, rounding, offline behavior and the chat request contract.
 
 Preferences provides light/dark appearance. It applies across the app and is saved per device. The old dashboard theme toggle has been removed.
 

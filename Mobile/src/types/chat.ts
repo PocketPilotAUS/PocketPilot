@@ -13,6 +13,7 @@ export type Proposal = {
 };
 
 export type ChatMessage = {
+  currency?: "AED" | "CNY";
   role: "user" | "assistant";
   content: string;
   proposal?: Proposal;

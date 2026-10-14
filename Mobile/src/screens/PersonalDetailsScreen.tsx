@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StatusBar } from "react-native";
 import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ArrowLeft, Eye, EyeOff } from "lucide-react-native";
+import { Eye, EyeOff } from "lucide-react-native";
+import BackButton from "../components/BackButton";
+import { navigationStyles } from "../styles/NavigationStyles";
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
 import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
 import { createSettingsStyles } from "../styles/SettingsStyles";
@@ -76,7 +78,7 @@ export default function PersonalDetailsScreen({ apiBaseUrl, onBack, onUpdated, o
   return <SafeAreaView style={s.screen} edges={["top", "left", "right"]}>
     <StatusBar barStyle={mode === "dark" ? "light-content" : "dark-content"} />
     <KeyboardFormScrollView contentContainerStyle={s.content}>
-      <View style={s.header}><Pressable disabled={busy} onPress={back} style={s.back} accessibilityRole="button" accessibilityLabel={t("back")}><ArrowLeft color={palette.text} size={22} /></Pressable><View style={s.headingText}><Text style={s.title}>{t("personal")}</Text><Text style={s.subtitle}>Your account, your details</Text></View></View>
+      <View style={[s.header, navigationStyles.header]}><BackButton disabled={busy} onPress={back} label={t("back")} /><View style={s.headingText}><Text style={s.title}>{t("personal")}</Text><Text style={s.subtitle}>Your account, your details</Text></View></View>
       {loading ? <ActivityIndicator color={palette.accent} /> : !account ? <View style={s.card}><Text style={s.error}>{profileError}</Text><Pressable style={s.button} onPress={() => setRetry(n => n + 1)}><Text style={s.buttonText}>Retry</Text></Pressable></View> : <>
         <View style={s.card}><Text style={s.sectionTitle}>Personal details</Text>
           <View style={s.field}><Text style={s.label}>Full name</Text><TextInput style={s.input} value={name} onChangeText={setName} editable={!busy} maxLength={100} accessibilityLabel="Full name" autoCapitalize="words" /></View>

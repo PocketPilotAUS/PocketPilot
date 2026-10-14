@@ -1,3 +1,4 @@
+import { formatDisplayAmount } from "../../preferences/currency";
 import React from "react";
 import { ActivityIndicator, Pressable } from "react-native";
 import { Text, View } from "../../preferences/LocalizedNative";
@@ -10,7 +11,6 @@ import {
   DashboardData,
   buildSlices,
   formatAED,
-  formatAmount,
   formatPercent,
   monthName,
 } from "../../utils/dashboard";
@@ -49,7 +49,7 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
             <View style={styles.chartCenter}>
               <Text style={styles.chartCenterLabel}>{chart.validIncome ? "Monthly income" : "Income needed"}</Text>
               <Text style={styles.chartCenterCurrency}>AED</Text>
-              <Text style={styles.chartCenterValue} adjustsFontSizeToFit numberOfLines={1}>{chart.validIncome ? formatAmount(data!.income!) : "—"}</Text>
+              <Text style={styles.chartCenterValue} adjustsFontSizeToFit numberOfLines={1}>{chart.validIncome ? formatDisplayAmount(data!.income!) : "—"}</Text>
             </View>
           </View>
 
@@ -81,7 +81,7 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
               <Text style={styles.chartCenterLabel}>{chart.validIncome ? "Monthly income" : "Income needed"}</Text>
               <Text style={styles.chartCenterCurrency}>AED</Text>
               <Text style={styles.chartCenterValue} adjustsFontSizeToFit numberOfLines={1}>
-                {chart.validIncome ? formatAmount(data!.income!) : "—"}
+                {chart.validIncome ? formatDisplayAmount(data!.income!) : "—"}
               </Text>
             </View>
           </View>

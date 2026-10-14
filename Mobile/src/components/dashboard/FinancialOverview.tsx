@@ -1,3 +1,4 @@
+import { amountDraft, toAED, baseMoneyDraft } from "../../preferences/currency";
 import React, { useState } from "react";
 import { ActivityIndicator, Pressable } from "react-native";
 import { Text, TextInput, View } from "../../preferences/LocalizedNative";
@@ -35,7 +36,7 @@ export default function FinancialOverview({ data, loading, apiBaseUrl, onSaved }
   const spentPercentage = data?.spent_percentage ?? null;
 
   const startEditing = () => {
-    setDraft(income === null ? "" : String(income));
+    setDraft(income === null ? "" : amountDraft(income));
     setError("");
     setEditing(true);
   };
@@ -43,7 +44,7 @@ export default function FinancialOverview({ data, loading, apiBaseUrl, onSaved }
   const save = async () => {
     if (!data || saving) return;
 
-    const problem = validateIncome(draft);
+    const problem = validateIncome(baseMoneyDraft(draft));
 
     if (problem) {
       setError(problem);
@@ -54,7 +55,7 @@ export default function FinancialOverview({ data, loading, apiBaseUrl, onSaved }
     setError("");
 
     try {
-      onSaved(await saveMonthlyIncome(apiBaseUrl, data.year, data.month, draft.trim()));
+      onSaved(await saveMonthlyIncome(apiBaseUrl, data.year, data.month, String(toAED(draft, income))));
       setEditing(false);
     } catch (err) {
       if (!(err instanceof SessionExpiredError)) {

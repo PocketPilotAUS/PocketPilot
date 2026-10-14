@@ -1,3 +1,5 @@
+import { currencyText } from "../../preferences/currency";
+import { usePreferences } from "../../preferences/PreferencesContext";
 import React from "react";
 import { Text, View } from "react-native";
 
@@ -7,6 +9,8 @@ import { InlineSegment, parseMessage } from "../../utils/messageFormat";
 // Renders an AI reply with paragraphs, headings, lists and bold text
 export default function FormattedMessage({ content }: { content: string }) {
   const { ai } = useAITheme();
+  usePreferences();
+  content = currencyText(content);
 
   const inline = (segments: InlineSegment[]) =>
     segments.map((segment, index) => (

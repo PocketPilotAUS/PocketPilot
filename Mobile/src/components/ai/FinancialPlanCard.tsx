@@ -1,3 +1,4 @@
+import { formatDisplayAmount } from "../../preferences/currency";
 import React, { useState } from "react";
 import { Pressable } from "react-native";
 import { Text, View } from "../../preferences/LocalizedNative";
@@ -7,7 +8,7 @@ import { ChevronDown, ChevronUp } from "lucide-react-native";
 import { useAITheme } from "./useAITheme";
 import { createPlanningStyles } from "../../styles/PlanningStyles";
 import type { FinancialPlan } from "../../types/plans";
-import { formatAED, formatAmount, formatPercent } from "../../utils/dashboard";
+import { formatAED, formatPercent } from "../../utils/dashboard";
 import { formatPlanningDate } from "../../utils/planningDate";
 import { percentOf, planScenario } from "../../utils/planVisuals";
 
@@ -83,7 +84,7 @@ export default function FinancialPlanCard({ plan, onSave, onEdit, onDelete, busy
         <View pointerEvents="none" style={s.planChartCenter}>
           <Text style={s.chartLabel}>{focus ? focus.category : chart.validIncome ? "Household income" : "Income needed"}</Text>
           <Text style={s.chartCurrency}>AED</Text>
-          <Text style={s.chartValue} adjustsFontSizeToFit numberOfLines={1}>{focus ? formatAmount(focus.amount) : chart.validIncome ? formatAmount(plan.income) : "—"}</Text>
+          <Text style={s.chartValue} adjustsFontSizeToFit numberOfLines={1}>{focus ? formatDisplayAmount(focus.amount) : chart.validIncome ? formatDisplayAmount(plan.income) : "—"}</Text>
           {focus && chart.validIncome && <Text style={s.caption}>{formatPercent(focus.amount / plan.income * 100)} of income</Text>}
         </View>
       </View>
@@ -111,13 +112,25 @@ export default function FinancialPlanCard({ plan, onSave, onEdit, onDelete, busy
 
     <View style={s.visualSection}>
       <Text style={s.sectionTitle}>Category comparison</Text>
-      <Text style={s.caption}>All bars use the same scale. Tap a category to inspect it.</Text>
-      <View style={s.barLegend}><View style={[s.chartDot, s.baselineDot]} /><Text style={s.caption}>Baseline</Text><View style={[s.chartDot, s.targetDot]} /><Text style={s.caption}>Proposed</Text></View>
+      <Text style={s.caption}>Current is your monthly estimate. Proposed is the suggested amount for your plan.</Text>
+      <Text style={s.caption}>Every full bar represents {formatAED(barMax)} per month.</Text>
+      <View style={s.comparisonScale}>
+        <View style={s.scaleStart}><Text style={s.scaleLabel} numberOfLines={1} adjustsFontSizeToFit>{formatAED(0)}</Text></View>
+        <View style={s.scaleMiddle}><Text style={s.scaleLabel} numberOfLines={1} adjustsFontSizeToFit>{formatAED(barMax / 2)}</Text></View>
+        <View style={s.scaleEnd}><Text style={s.scaleLabel} numberOfLines={1} adjustsFontSizeToFit>{formatAED(barMax)}</Text></View>
+      </View>
       {rows.map(row => <Pressable key={row.category} accessibilityRole="button" accessibilityState={{ selected: selected === row.category }} onPress={() => select(row.category)}
-        accessibilityLabel={`${row.category}: baseline ${formatAED(row.baseline)}, proposed ${formatAED(row.target)}`} style={[s.comparisonRow, selected === row.category && s.legendSelected]}>
-        <View style={s.sectionHeading}><Text style={s.label}>{row.category}</Text>{row.baseline - row.target > .005 && <Text style={s.reductionLabel}>−{formatAED(row.baseline - row.target)}</Text>}</View>
-        <View style={s.barLine}><View style={s.comparisonTrack}><View style={[s.comparisonFill, s.baselineFill, { width: `${percentOf(row.baseline, barMax)}%` }]} /></View><Text style={s.barAmount}>{formatAmount(row.baseline)}</Text></View>
-        <View style={s.barLine}><View style={s.comparisonTrack}><View style={[s.comparisonFill, s.targetFill, { width: `${percentOf(row.target, barMax)}%` }]} /></View><Text style={s.barAmount}>{formatAmount(row.target)}</Text></View>
+        accessibilityLabel={`${row.category}: current ${formatAED(row.baseline)}, proposed ${formatAED(row.target)}`} style={[s.comparisonRow, selected === row.category && s.legendSelected]}>
+        <Text style={s.comparisonCategory}>{row.category}</Text>
+        <View style={s.comparisonPair}>
+          <View style={s.comparisonBarHeading}><Text style={s.comparisonLabel}>Current</Text><Text style={s.comparisonAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={.8}>{formatAED(row.baseline)}</Text></View>
+          <View style={s.comparisonTrack}><View style={[s.comparisonFill, s.baselineFill, { width: `${percentOf(row.baseline, barMax)}%` }]} /></View>
+        </View>
+        <View style={s.comparisonPair}>
+          <View style={s.comparisonBarHeading}><Text style={[s.comparisonLabel, s.accentText]}>Proposed</Text><Text style={s.comparisonAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={.8}>{formatAED(row.target)}</Text></View>
+          <View style={s.comparisonTrack}><View style={[s.comparisonFill, s.targetFill, { width: `${percentOf(row.target, barMax)}%` }]} /></View>
+        </View>
+        <Text style={row.baseline - row.target > .005 ? s.reductionLabel : s.caption}>{Math.abs(row.baseline - row.target) <= .005 ? "No change proposed" : row.baseline > row.target ? `Suggested reduction: ${formatAED(row.baseline - row.target)} / month` : `Proposed increase: ${formatAED(row.target - row.baseline)} / month`}</Text>
       </Pressable>)}
       <Text style={s.caption}>Amounts in AED per month. Proposed targets are estimates, not recorded spending.</Text>
     </View>

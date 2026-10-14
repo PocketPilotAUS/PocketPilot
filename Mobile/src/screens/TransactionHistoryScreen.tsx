@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, StatusBar } from "react-native";
 import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Inbox, Plus, RefreshCw, Search, SearchX, TriangleAlert, X } from "lucide-react-native";
+import { FileUp, Inbox, Plus, RefreshCw, Search, SearchX, TriangleAlert, X } from "lucide-react-native";
 
 import RecurringExpenses from "../components/RecurringExpenses";
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
@@ -27,9 +27,10 @@ type Props = {
   apiBaseUrl: string;
   refreshKey?: number;
   onAddExpense?: () => void;
+  onImportStatement?: () => void;
 };
 
-export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, refreshKey = 0 }: Props) {
+export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onImportStatement, refreshKey = 0 }: Props) {
   const { styles, tx, palette, mode } = useTransactionsTheme();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -256,6 +257,8 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, ref
           <Plus size={19} color={palette.onAccent} strokeWidth={2.4} />
           <Text style={tx.addButtonText}>Add transaction</Text>
         </Pressable>}
+
+        {onImportStatement && <Pressable onPress={onImportStatement} style={tx.importButton} accessibilityRole="button" accessibilityLabel="Import bank statement"><FileUp size={19} color={palette.accent} /><Text style={tx.importButtonText}>Import bank statement</Text></Pressable>}
 
         {/* Summary for the current search and filters */}
         <View style={styles.card}>

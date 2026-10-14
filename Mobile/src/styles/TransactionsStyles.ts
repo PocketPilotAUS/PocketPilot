@@ -11,6 +11,8 @@ export const createTransactionsStyles = (p: DashboardPalette) =>
       paddingHorizontal: 16, paddingVertical: 12, marginBottom: 18,
     },
     addButtonText: { color: p.onAccent, fontSize: 15, fontWeight: "700" },
+    importButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 48, borderWidth: 1, borderColor: p.accent, borderRadius: 16, padding: 12, marginBottom: 18 },
+    importButtonText: { color: p.accent, fontSize: 15, fontWeight: "700" },
     // Summary
 
     summaryRow: {

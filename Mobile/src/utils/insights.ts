@@ -1,3 +1,4 @@
+import { toDisplayAmount } from "../preferences/currency";
 // Calculations for the Insights screen. Everything is derived from the
 // user's real data; the 20% rule stays in the backend (/recommendations/).
 
@@ -80,6 +81,7 @@ export function trendStats(months: TrendMonth[]) {
 
 // "1.2k" style labels for chart bars
 export function compactAED(value: number): string {
+  value = toDisplayAmount(value);
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
   return formatAmount(value).replace(/\.00$/, "");

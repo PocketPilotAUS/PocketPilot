@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import { displayProfile, baseProfile } from "../../preferences/currency";
+import React, { useEffect, useState } from "react";
 import { Pressable } from "react-native";
 import { Text, TextInput, View } from "../../preferences/LocalizedNative";
 import KeyboardFormScrollView from "../KeyboardFormScrollView";
@@ -15,9 +16,9 @@ export const initialProfile = (context: PlanningContext): PlanningProfile => ({
   income: context.current_income, other_income: null, household_size: null, goal: null, goal_kind: null,
   target_amount: null, current_amount: null, deadline: null, expenses: {}, typical_months: [], protected_categories: [], ...context.profile,
 });
-export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, onCancel }: { apiBaseUrl: string; context: PlanningContext; initial?: PlanningProfile; onPreview: (plan: FinancialPlan) => void; onCancel: () => void }) {
+export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, onCancel, onBusyChange }: { apiBaseUrl: string; context: PlanningContext; initial?: PlanningProfile; onPreview: (plan: FinancialPlan) => void; onCancel: () => void; onBusyChange?: (busy: boolean) => void }) {
   const { palette } = useAITheme(); const s = createPlanningStyles(palette);
-  const [profile, setProfile] = useState<PlanningProfile>(initial ?? initialProfile(context));
+  const [profile, setProfile] = useState<PlanningProfile>(() => displayProfile(initial ?? initialProfile(context)));
   const [deadlineText, setDeadlineText] = useState(() => formatPlanningDate((initial ?? initialProfile(context)).deadline));
   const [dateError, setDateError] = useState<string | null>(null);
   const updateDeadline = (text: string) => {
@@ -26,6 +27,7 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
     setProfile(current => ({ ...current, deadline: parsePlanningDate(text) }));
   };
   const [step, setStep] = useState(0); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  useEffect(() => { onBusyChange?.(busy); return () => { onBusyChange?.(false); }; }, [busy, onBusyChange]);
   const change = (key: keyof PlanningProfile, value: unknown) => setProfile(current => ({ ...current, [key]: value }));
   const field = (label: string, key: keyof PlanningProfile, numeric = true, hint?: string) => <View key={key} style={{ gap: 8 }}>
     <Text style={s.label}>{label}</Text>
@@ -37,7 +39,7 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
     if (invalidDate) { setDateError(invalidDate); setStep(1); return; }
     setBusy(true); setError("");
     try {
-      const result = await planningRequest<FinancialPlan & { missing?: string[] }>(apiBaseUrl, "/profile", "PUT", profile);
+      const result = await planningRequest<FinancialPlan & { missing?: string[] }>(apiBaseUrl, "/profile", "PUT", baseProfile(profile, initial ?? initialProfile(context)));
       if (!result.ready) { setError(`Still needed: ${result.missing?.join(", ")}. Use 0 only when a cost truly does not apply.`); return; }
       onPreview(result);
     } catch (err) { if (!(err instanceof SessionExpiredError)) setError((err as Error).message); }
@@ -68,7 +70,7 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
           <Text style={s.text}>{Object.entries(categories).map(([key, amount]) => `${key} ${formatAED(amount)}`).join(" · ")}</Text>
         </View>)}
         {!Object.keys(context.past_months).length && <Text style={s.text}>No past recorded months yet. Enter monthly estimates below.</Text>}
-        {!!Object.keys(context.recurring_obligations).length && <><Text style={s.text}>Active recurring commitments: {Object.entries(context.recurring_obligations).map(([key, amount]) => `${key} ${formatAED(amount)}`).join(" · ")}</Text><Pressable style={[s.button, s.secondary]} onPress={() => setProfile(current => ({ ...current, expenses: { ...context.recurring_obligations, ...current.expenses } }))}><Text style={s.secondaryText}>Use recurring amounts for blank categories</Text></Pressable></>}
+        {!!Object.keys(context.recurring_obligations).length && <><Text style={s.text}>Active recurring commitments: {Object.entries(context.recurring_obligations).map(([key, amount]) => `${key} ${formatAED(amount)}`).join(" · ")}</Text><Pressable style={[s.button, s.secondary]} onPress={() => setProfile(current => ({ ...current, expenses: { ...displayProfile({ expenses: context.recurring_obligations }).expenses, ...current.expenses } }))}><Text style={s.secondaryText}>Use recurring amounts for blank categories</Text></Pressable></>}
         {PLAN_CATEGORIES.map(category => <View key={category} style={{ gap: 8 }}>
           <Text style={s.label}>{category === "Debt payments" ? "Required minimum debt payments" : category}</Text>
           <TextInput style={s.input} accessibilityLabel={`${category} monthly estimate`} placeholder={profile.typical_months.length ? "Use confirmed history average" : "Unknown · enter amount or 0 if none"} placeholderTextColor={palette.textMuted} keyboardType="decimal-pad" value={profile.expenses[category] == null ? "" : String(profile.expenses[category])} onChangeText={value => setProfile(current => ({ ...current, expenses: { ...current.expenses, [category]: value === "" ? null : value } }))} editable={!busy} />
@@ -91,7 +93,7 @@ export default function PlanningForm({ apiBaseUrl, context, initial, onPreview, 
   async function previewSpending() {
     setBusy(true); setError("");
     try {
-      const result = await planningRequest<FinancialPlan & { missing?: string[] }>(apiBaseUrl, "/profile", "PUT", { ...profile, current_amount: 0, deadline: null });
+      const result = await planningRequest<FinancialPlan & { missing?: string[] }>(apiBaseUrl, "/profile", "PUT", baseProfile({ ...profile, current_amount: 0, deadline: null }, initial ?? initialProfile(context)));
       if (!result.ready) setError(`Still needed: ${result.missing?.join(", ")}`); else onPreview(result);
     } catch (err) { if (!(err instanceof SessionExpiredError)) setError((err as Error).message); }
     finally { setBusy(false); }
