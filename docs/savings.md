@@ -1,6 +1,14 @@
 # Monthly savings
 
-Home > Savings shows the sum of confirmed completed-month savings, a selected month's estimate and monthly confirmation history. It is a cumulative contribution tracker, not a live bank balance: withdrawals, opening savings balances and automatic rollover are not supported in this first version.
+Home > Savings shows manual savings plus confirmed completed-month savings, a selected month's estimate and monthly confirmation history. Users can add savings held before installing the app and other contributions not included in monthly confirmations. It is a cumulative contribution tracker, not a live bank balance; withdrawals and automatic rollover are not supported.
+
+## Manual savings
+
+Add savings accepts a positive selected-currency amount and optional label (defaults to Previous savings). Values are converted to AED and stored as integer cents. The total card separates manual contributions from confirmed monthly contributions. Entries can be edited or removed; monthly estimates, income, expenses, debt balances and confirmations are unchanged. Do not enter money already covered by a monthly confirmation. Editing unchanged CNY amounts preserves stored AED values. Saved custom labels remain user text.
+
+Authenticated POST `/savings/manual` creates an entry with label, amount and UUID request_key; repeated request keys are scoped to the owner and return the same entry instead of adding twice. PUT/DELETE `/savings/manual/{id}` edits/removes owner-only entries; unknown or other-owner IDs return 404. Amounts must be finite, positive, at most AED 1 billion and up to two decimal places; labels are readable and 1–80 characters.
+
+New setup requirement for existing databases: run `./venv/Scripts/python.exe migrate_manual_savings.py` from Backend. It backs up first, adds only manual_savings and its owner index, and is idempotent. Existing monthly_savings records are preserved. Fresh init_db.py creates both tables. Updated Savings overview expects the manual table and returns a setup error if absent. The original migrate_savings.py remains required on older installations; neither old migration was rewritten.
 
 Estimate = monthly income minus all recorded spending minus actual debt payments not already recorded in spending. Recorded spending already includes any debt payment entered as a transaction, regardless of category. The user enters missing actual debt payments separately (default zero); loan balances and estimated installments on the Debt page are never deducted automatically. Extra payments entered here do not create expense transactions or reduce saved debt balances.
 
@@ -14,4 +22,4 @@ Existing installations: stop the backend if possible and run `./venv/Scripts/pyt
 
 Authenticated GET `/savings?year=YYYY&month=M` returns selected income/spending, confirmation eligibility, total and owner-only history. PUT `/savings/confirm` accepts year, month, extra_debt_payments, expected_income and expected_spent. Server computes and stores savings; client cannot supply a saved total. SQLite confirmation uses a write lock around snapshot checks and unique owner/month upsert.
 
-Validation: 11 focused tests cover confirmed versus estimated totals, debt counted once, debt estimates ignored, duplicate confirmation/updating, shortfall, missing income, changed records, ownership/authentication, invalid values, month-end guard and backup/idempotent migration. Mobile typecheck and full-suite results recorded in the phase log. Phone rendering remains a manual check.
+Validation: 22 focused savings tests cover monthly confirmations and manual CRUD/totals, owner isolation, idempotent retries, validation and backup/idempotent migrations. Mobile typecheck and full-suite results are recorded in the phase logs. Phone rendering remains a manual check.

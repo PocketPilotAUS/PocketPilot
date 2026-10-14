@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, PiggyBank, TriangleAlert } from "lucide-reac
 import BackButton from "../components/BackButton";
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
 import CurrencyNotice from "../components/CurrencyNotice";
+import ManualSavingsPanel from "../components/ManualSavingsPanel";
 import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
 import { navigationStyles } from "../styles/NavigationStyles";
 import { createSavingsStyles } from "../styles/SavingsStyles";
@@ -57,8 +58,14 @@ export default function SavingsScreen({ apiBaseUrl, onBack }: { apiBaseUrl: stri
       <View style={[d.header, navigationStyles.header]}><BackButton onPress={onBack} disabled={busy} label="Back to Home" /><View style={d.cardTitleBlock}><Text style={d.eyebrow}>Your finances</Text><Text style={d.title}>Savings</Text></View></View>
       {!!error && <View style={d.errorBanner} accessibilityRole="alert"><TriangleAlert size={16} color={palette.danger} /><Text style={d.errorBannerText}>{error}</Text></View>}
       {loading ? <View style={[d.card, d.loader]}><ActivityIndicator color={palette.accent} /></View> : data && <>
-        <View style={d.card}><View style={d.cardHeader}><Text style={d.cardLabel}>Total confirmed savings</Text><View style={s.icon}><PiggyBank size={22} color={palette.accent} /></View></View><Text style={[d.heroAmount, d.heroAmountAccent]} adjustsFontSizeToFit numberOfLines={1}>{formatAED(data.total_saved)}</Text><Text style={d.heroHint}>Only confirmed completed months count toward this total.</Text></View>
+        <View style={d.card}><View style={d.cardHeader}><Text style={d.cardLabel}>Total savings</Text><View style={s.icon}><PiggyBank size={22} color={palette.accent} /></View></View><Text style={[d.heroAmount, d.heroAmountAccent]} adjustsFontSizeToFit numberOfLines={1}>{formatAED(data.total_saved)}</Text><Text style={d.heroHint}>Manual savings plus confirmed completed months.</Text><View style={d.statRow}><View style={d.statTile}><Text style={d.statLabel}>Added manually</Text><Text style={d.statValue} adjustsFontSizeToFit numberOfLines={1}>{formatAED(data.manual_total)}</Text></View><View style={d.statTile}><Text style={d.statLabel}>Confirmed monthly savings</Text><Text style={d.statValue} adjustsFontSizeToFit numberOfLines={1}>{formatAED(data.history.reduce((sum, row) => sum + row.saved, 0))}</Text></View></View></View>
         <CurrencyNotice />
+        <ManualSavingsPanel apiBaseUrl={apiBaseUrl} entries={data.manual_entries} disabled={busy} onBusyChange={setBusy} onChanged={entries => setData(previous => {
+          if (!previous) return previous;
+          const manualTotal = Math.round(entries.reduce((sum, entry) => sum + entry.amount, 0) * 100) / 100;
+          const monthlyTotal = previous.history.reduce((sum, row) => sum + row.saved, 0);
+          return { ...previous, manual_entries: entries, manual_total: manualTotal, total_saved: Math.round((manualTotal + monthlyTotal) * 100) / 100 };
+        })} />
         <View style={d.card}>
           <View style={s.selector}><Pressable disabled={busy || year <= 1 && monthNumber <= 1} onPress={() => change(-1)} accessibilityRole="button" accessibilityLabel="Previous month" style={[s.monthButton, busy && d.buttonDisabled]}><ChevronLeft size={20} color={palette.text} /></Pressable><Text style={s.month}>{monthName(monthNumber)} {year}</Text><Pressable disabled={busy || !nextEnabled} onPress={() => change(1)} accessibilityRole="button" accessibilityLabel="Next month" style={[s.monthButton, (busy || !nextEnabled) && d.buttonDisabled]}><ChevronRight size={20} color={palette.text} /></Pressable></View>
           <Text style={d.heroLabel}>{leftover != null && leftover < 0 ? "Monthly shortfall" : "Estimated savings for this month"}</Text><Text style={[d.heroAmount, leftover != null && leftover < 0 ? d.heroAmountDanger : d.heroAmountAccent]} adjustsFontSizeToFit numberOfLines={1}>{leftover == null ? "Not set" : formatAED(Math.abs(leftover))}</Text>
@@ -72,7 +79,7 @@ export default function SavingsScreen({ apiBaseUrl, onBack }: { apiBaseUrl: stri
           <Pressable disabled={busy || !data.can_confirm || data.income == null || !valid} onPress={confirm} accessibilityRole="button" style={[d.primaryButton, s.action, (busy || !data.can_confirm || data.income == null || !valid) && d.buttonDisabled]}><Text style={d.primaryButtonText}>{busy ? "Saving…" : confirmed ? "Update confirmed savings" : "Confirm month's savings"}</Text></Pressable>
         </View>
         <View style={d.card}><Text style={s.historyTitle}>Monthly savings history</Text>{!data.history.length && <Text style={d.mutedText}>No confirmed savings yet.</Text>}{data.history.map(row => <Pressable key={row.year + "-" + row.month} disabled={busy} onPress={() => setMonth(new Date(row.year, row.month - 1, 1))} accessibilityRole="button" style={s.historyRow}><View style={s.historyHeading}><Text style={s.rowTitle}>{monthName(row.month)} {row.year}</Text><Text style={s.rowValue}>{formatAED(row.saved)}</Text></View><Text style={d.mutedText}>Confirmed savings</Text>{row.leftover < 0 && <Text style={d.formError}>Monthly shortfall: {formatAED(-row.leftover)}</Text>}</Pressable>)}</View>
-        <Text style={d.mutedText}>This tracks monthly savings you confirm, not your bank balance. Later edits to transactions do not automatically change confirmed months.</Text>
+        <Text style={d.mutedText}>This tracks manual savings and confirmed months, not a live bank balance. Later transaction edits do not automatically change confirmed months.</Text>
       </>}
       {!!error && <Pressable disabled={busy || loading} onPress={() => setRevision(value => value + 1)} style={[d.secondaryButton, s.action]}><Text style={d.secondaryButtonText}>Refresh</Text></Pressable>}
     </KeyboardFormScrollView>

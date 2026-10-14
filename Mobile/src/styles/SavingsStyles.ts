@@ -1,6 +1,11 @@
 import { StyleSheet } from "react-native";
 import type { DashboardPalette } from "./DashboardStyles";
 export const createSavingsStyles = (p: DashboardPalette) => StyleSheet.create({
+  manualAddButton: { flexGrow: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 46, marginBottom: 16 },
+  manualPressed: { opacity: .75 },
+  manualRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: p.border },
+  manualBody: { flex: 1, gap: 6 },
+  manualAction: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: p.cardRaised },
   header: { marginTop: 4 },
   icon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: p.accentSoft },
   selector: { flexDirection: "row", gap: 12, alignItems: "center", marginBottom: 18 },
