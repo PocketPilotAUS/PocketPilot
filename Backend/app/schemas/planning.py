@@ -16,6 +16,10 @@ class PlanningInput(BaseModel):
     goal_kind: Literal["savings", "debt", "spending"] | None = None
     target_amount: Money | None = None
     current_amount: Money | None = Field(default=None, description="Money ALREADY saved or paid toward this goal, never salary or monthly income.")
+    preferred_monthly_savings: Money | None = Field(
+        default=None,
+        description="Optional amount the user wants to contribute monthly toward a savings goal. None means use the amount required by the deadline."
+    )
     deadline: date | None = Field(default=None, description="User requested future target date YYYY-MM-DD. Never invent a deadline.")
     # Only months explicitly marked complete/typical may establish a baseline.
     typical_months: list[str] = Field(default_factory=list, max_length=12)
@@ -33,4 +37,6 @@ class PlanningInput(BaseModel):
             raise ValueError("Choose each typical month only once")
         if self.goal is not None and not self.goal.strip():
             raise ValueError("Describe your main goal")
+        if self.preferred_monthly_savings is not None and self.goal_kind != "savings":
+            raise ValueError("Preferred monthly savings is only available for savings goals")
         return self
