@@ -25,6 +25,7 @@ import CurrencyNotice from "./src/components/CurrencyNotice";
 import AmbientBackground from "./src/components/AmbientBackground";
 import AnimatedWelcome from "./src/components/AnimatedWelcome";
 import FinancialOverview from "./src/components/dashboard/FinancialOverview";
+import BudgetTracker from "./src/components/dashboard/BudgetTracker";
 import HomeSections from "./src/components/dashboard/HomeSections";
 import SpendingScreen from "./src/screens/SpendingScreen";
 import DebtScreen from "./src/screens/DebtScreen";
@@ -70,8 +71,8 @@ function PocketPilotApp() {
   const settingsReturn = useRef<Screen>("dashboard");
   const openSettings = () => { settingsReturn.current = screen; setScreen("settings"); };
 
-const API_BASE_URL = "http://192.168.1.16:8000";
-const chatSession = useChatSession(API_BASE_URL);
+  const API_BASE_URL = "http://192.168.1.16:8000";
+  const chatSession = useChatSession(API_BASE_URL);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -278,12 +279,15 @@ const chatSession = useChatSession(API_BASE_URL);
   }
 
   if (screen === "spending") {
-    return withNavigation(<SpendingScreen
-      data={spending} loading={loading} error={error} apiBaseUrl={API_BASE_URL}
-      onBack={() => setScreen("dashboard")} onAddExpense={openAddTransaction}
-      onSaved={setSpending} aiBusy={chatSession.busy}
-      onReview={() => { if (!spending?.ideal_budget || chatSession.busy) return; setScreen("aiChat"); void chatSession.send("Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.", { year: spending.year, month: spending.month }); }}
-    />);
+    return withNavigation(
+      <SpendingScreen
+        data={spending}
+        loading={loading}
+        error={error}
+        onBack={() => setScreen("dashboard")}
+        onAddExpense={openAddTransaction}
+      />
+    );
   }
 
   if (screen === "debt") {
@@ -342,8 +346,31 @@ const chatSession = useChatSession(API_BASE_URL);
           onSaved={setSpending}
         />
 
-        <HomeSections onOpenSpending={() => setScreen("spending")} onOpenDebt={() => setScreen("debt")} onOpenSavings={() => setScreen("savings")} />
+        <BudgetTracker
+          data={spending}
+          apiBaseUrl={API_BASE_URL}
+          onSaved={setSpending}
+          aiBusy={chatSession.busy}
+          onReview={() => {
+            if (!spending?.ideal_budget || chatSession.busy) return;
 
+            setScreen("aiChat");
+
+            void chatSession.send(
+              "Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.",
+              {
+                year: spending.year,
+                month: spending.month,
+              }
+            );
+          }}
+        />
+
+        <HomeSections
+          onOpenSpending={() => setScreen("spending")}
+          onOpenDebt={() => setScreen("debt")}
+          onOpenSavings={() => setScreen("savings")}
+        />
       </KeyboardFormScrollView>
     </SafeAreaView>
   );

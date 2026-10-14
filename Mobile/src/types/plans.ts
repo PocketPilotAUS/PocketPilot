@@ -101,4 +101,10 @@ export type PlanningContext = {
   current_income: number | null;
   past_months: Record<string, Record<string, number>>;
   recurring_obligations: Record<string, number>;
+  saved_budget?: {
+    year: number;
+    month: number;
+    income: number | null;
+    expenses: Record<string, number>;
+  } | null;
 };

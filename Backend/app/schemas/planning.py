@@ -25,15 +25,24 @@ class PlanningInput(BaseModel):
     # Only months explicitly marked complete/typical may establish a baseline.
     typical_months: list[str] = Field(default_factory=list, max_length=12)
     expenses: dict[str, Money | None] = Field(default_factory=dict, description="Baseline monthly costs explicitly stated by user. Allowed category names: Rent, Food, Transport, Bills, Debt payments, Entertainment, Shopping, Subscriptions, Other. Never invent zero costs.")
-    protected_categories: list[str] = Field(default_factory=list, max_length=9)
+    protected_categories: list[str] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
     def validate_profile(self):
         import re
         if self.monthly_contribution is not None and self.monthly_contribution <= 0:
             raise ValueError("Choose a positive monthly contribution")
-        if any(key not in CATEGORIES for key in self.expenses) or any(key not in CATEGORIES for key in self.protected_categories):
-            raise ValueError("Unknown expense category")
+            
+        categories = set(self.expenses) | set(self.protected_categories)
+
+        if (
+            len(categories) > 50
+            or any(not key.strip() or len(key) > 80 for key in categories)
+        ):
+            raise ValueError("Use up to 50 expense categories with names of 1–80 characters")
+
+        if any(key not in self.expenses for key in self.protected_categories):
+            raise ValueError("Protected categories must also be included in expenses")
         if any(not re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", month) or int(month[:4]) < 1 for month in self.typical_months):
             raise ValueError("Use YYYY-MM for typical months")
         if len(set(self.typical_months)) != len(self.typical_months):

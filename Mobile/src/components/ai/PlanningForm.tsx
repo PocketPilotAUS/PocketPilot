@@ -23,7 +23,11 @@ import {
 // New plans start fresh, except for monthly income.
 // Existing plans use the initial profile passed for editing.
 export const initialProfile = (context: PlanningContext): PlanningProfile => ({
-  income: context.current_income ?? context.profile.income ?? null,
+  income:
+    context.saved_budget?.income ??
+    context.current_income ??
+    context.profile.income ??
+    null,
   other_income: null,
   household_size: 1,
   goal: null,
@@ -32,7 +36,9 @@ export const initialProfile = (context: PlanningContext): PlanningProfile => ({
   current_amount: null,
   preferred_monthly_savings: null,
   deadline: null,
-  expenses: {},
+  expenses: context.saved_budget
+    ? { ...context.saved_budget.expenses }
+    : {},
   typical_months: [],
   protected_categories: [],
 });
@@ -55,6 +61,12 @@ export default function PlanningForm({
   const { palette } = useAITheme();
   const s = createPlanningStyles(palette);
   const startingProfile = initial ?? initialProfile(context);
+  const expenseCategories = Array.from(
+    new Set([
+      ...PLAN_CATEGORIES,
+      ...Object.keys(startingProfile.expenses),
+    ])
+  );
   const [profile, setProfile] = useState<PlanningProfile>(
     () => displayProfile(startingProfile)
   );
@@ -121,7 +133,7 @@ export default function PlanningForm({
   // 1. Manually entered estimate
   // 2. Average from selected typical months
   // 3. Unknown expense
-  const expenseSummary = PLAN_CATEGORIES.map(category => {
+  const expenseSummary = expenseCategories.map(category => {
     const entered = profile.expenses[category];
     if (entered !== null && entered !== undefined && entered !== "") {
       const amount = Number(entered);
@@ -220,8 +232,7 @@ export default function PlanningForm({
       );
       if (!result.ready) {
         setError(
-          `Still needed: ${
-            result.missing?.join(", ") ?? "more financial details"
+          `Still needed: ${result.missing?.join(", ") ?? "more financial details"
           }. Enter 0 only when an expense truly does not apply.`
         );
         if (missingCategories.length > 0) {
@@ -298,18 +309,18 @@ export default function PlanningForm({
                 </View>
               </View>
             )}
-              {profile.goal_kind === "savings" && (
-                <View style={{ gap: 8 }}>
-                  {field(
-                    "Preferred Monthly Savings (Optional)",
-                    "preferred_monthly_savings",
-                    true,
-                    "How much would you like to save each month? Leave blank and PocketPilot will calculate the amount needed for your deadline."
-                  )}
-                </View>
-              )}
-              {profile.goal_kind !== "spending" && (
-                <PlanningDateField
+            {profile.goal_kind === "savings" && (
+              <View style={{ gap: 8 }}>
+                {field(
+                  "Preferred Monthly Savings (Optional)",
+                  "preferred_monthly_savings",
+                  true,
+                  "How much would you like to save each month? Leave blank and PocketPilot will calculate the amount needed for your deadline."
+                )}
+              </View>
+            )}
+            {profile.goal_kind !== "spending" && (
+              <PlanningDateField
                 value={deadlineText}
                 onChange={updateDeadline}
                 error={dateError}
@@ -415,7 +426,7 @@ export default function PlanningForm({
                   </Text>
                   <Text style={s.label}>
                     {hasValidIncome &&
-                    missingCategories.length === 0
+                      missingCategories.length === 0
                       ? formatAED(availableAmount)
                       : "Pending"}
                   </Text>
@@ -435,11 +446,10 @@ export default function PlanningForm({
               <Text style={s.secondaryText}>
                 {showExpenses
                   ? "Hide Expense Details"
-                  : `Edit Expenses${
-                      missingCategories.length
-                        ? ` (${missingCategories.length} missing)`
-                        : ""
-                    }`}
+                  : `Edit Expenses${missingCategories.length
+                    ? ` (${missingCategories.length} missing)`
+                    : ""
+                  }`}
               </Text>
             </Pressable>
             {showExpenses && (
@@ -452,7 +462,7 @@ export default function PlanningForm({
                   marginTop: 12,
                 }}
               >
-                {PLAN_CATEGORIES.map(category => {
+                {expenseCategories.map(category => {
                   const summary = expenseSummary.find(
                     item => item.category === category
                   );
@@ -477,8 +487,8 @@ export default function PlanningForm({
                         placeholder={
                           summary?.source === "history"
                             ? `History average: ${formatAED(
-                                summary.amount
-                              )}`
+                              summary.amount
+                            )}`
                             : "Enter amount or 0 if none"
                         }
                         placeholderTextColor={palette.textMuted}
@@ -520,12 +530,12 @@ export default function PlanningForm({
                                 category
                               )
                                 ? profile.protected_categories.filter(
-                                    key => key !== category
-                                  )
+                                  key => key !== category
+                                )
                                 : [
-                                    ...profile.protected_categories,
-                                    category,
-                                  ]
+                                  ...profile.protected_categories,
+                                  category,
+                                ]
                             )
                           }
                         >
@@ -549,12 +559,12 @@ export default function PlanningForm({
                           ]}
                         >
                           {category === "Rent" ||
-                          category === "Bills"
+                            category === "Bills"
                             ? "Fixed expense"
                             : category === "Debt payments"
                               ? "Required payment"
                               : category === "Food" ||
-                                  category === "Transport"
+                                category === "Transport"
                                 ? "Regular expense"
                                 : "Other expense"}
                         </Text>
@@ -626,12 +636,12 @@ export default function PlanningForm({
                               "typical_months",
                               profile.typical_months.includes(month)
                                 ? profile.typical_months.filter(
-                                    m => m !== month
-                                  )
+                                  m => m !== month
+                                )
                                 : [
-                                    ...profile.typical_months,
-                                    month,
-                                  ]
+                                  ...profile.typical_months,
+                                  month,
+                                ]
                             )
                           }
                         >
@@ -667,42 +677,42 @@ export default function PlanningForm({
                   {!!Object.keys(
                     context.recurring_obligations
                   ).length && (
-                    <>
-                      <Text style={s.label}>
-                        Recurring Commitments
-                      </Text>
-                      <Text style={s.text}>
-                        {Object.entries(
-                          context.recurring_obligations
-                        )
-                          .map(
-                            ([key, amount]) =>
-                              `${key}: ${formatAED(amount)}`
-                          )
-                          .join(" · ")}
-                      </Text>
-                      <Pressable
-                        style={[s.button, s.secondary]}
-                        disabled={busy}
-                        onPress={() =>
-                          setProfile(current => ({
-                            ...current,
-                            expenses: {
-                              ...displayProfile({
-                                expenses:
-                                  context.recurring_obligations,
-                              }).expenses,
-                              ...current.expenses,
-                            },
-                          }))
-                        }
-                      >
-                        <Text style={s.secondaryText}>
-                          Use Recurring Estimates
+                      <>
+                        <Text style={s.label}>
+                          Recurring Commitments
                         </Text>
-                      </Pressable>
-                    </>
-                  )}
+                        <Text style={s.text}>
+                          {Object.entries(
+                            context.recurring_obligations
+                          )
+                            .map(
+                              ([key, amount]) =>
+                                `${key}: ${formatAED(amount)}`
+                            )
+                            .join(" · ")}
+                        </Text>
+                        <Pressable
+                          style={[s.button, s.secondary]}
+                          disabled={busy}
+                          onPress={() =>
+                            setProfile(current => ({
+                              ...current,
+                              expenses: {
+                                ...displayProfile({
+                                  expenses:
+                                    context.recurring_obligations,
+                                }).expenses,
+                                ...current.expenses,
+                              },
+                            }))
+                          }
+                        >
+                          <Text style={s.secondaryText}>
+                            Use Recurring Estimates
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
                 </View>
               )}
             </View>

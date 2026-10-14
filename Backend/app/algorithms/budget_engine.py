@@ -189,7 +189,7 @@ def calculate_plan(profile, expenses, sources, context, today):
         )
 
     for key, value in context["recurring_obligations"].items():
-        if expenses[key] < Decimal(str(value)):
+        if key in expenses and expenses[key] < Decimal(str(value)):
             warnings.append(
                 f"Your {key} estimate is below active recurring "
                 f"commitments of AED {value:.2f}. Review for missing "
