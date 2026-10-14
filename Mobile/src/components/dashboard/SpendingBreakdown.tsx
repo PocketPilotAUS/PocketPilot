@@ -58,14 +58,6 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
             {chart.validIncome ? `${formatAED(chart.remaining!)} of your income is unspent. Grey represents the remaining income.` : "Add your monthly income to see spending as a share of it."}
           </Text>
 
-          <Pressable
-            onPress={onAddExpense}
-            style={({ pressed }) => [styles.emptyButton, pressed && styles.buttonDisabled]}
-            accessibilityRole="button"
-          >
-            <Plus size={15} color={palette.onAccent} strokeWidth={2.6} />
-            <Text style={styles.emptyButtonText}>Add an expense</Text>
-          </Pressable>
         </View>
       ) : (
         <>
@@ -108,6 +100,15 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
           {chart.overBy > 0 && <Text style={styles.chartDeficit}>{formatAED(chart.overBy)} over income. The full red ring means all income has been used; category percentages show the actual overage.</Text>}
         </>
       )}
+      <Pressable
+        onPress={onAddExpense}
+        style={({ pressed }) => [styles.primaryButton, styles.spendingAddAction, pressed && styles.buttonDisabled]}
+        accessibilityRole="button"
+        accessibilityLabel="Add an expense"
+      >
+        <Plus size={17} color={palette.onAccent} strokeWidth={2.6} />
+        <Text style={styles.primaryButtonText}>Add an expense</Text>
+      </Pressable>
     </View>
   );
 }

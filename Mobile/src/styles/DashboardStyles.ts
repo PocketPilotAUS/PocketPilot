@@ -498,6 +498,7 @@ export const createDashboardStyles = (p: DashboardPalette) =>
       gap: 14,
     },
     budgetSetupAction: { marginTop: 16, minHeight: 46 },
+    spendingAddAction: { flexGrow: 0, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 16, minHeight: 46 },
     budgetReviewButton: { marginTop: 16, minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: p.accentSoft, borderRadius: 14, padding: 12 },
 
     budgetHeaderRow: {

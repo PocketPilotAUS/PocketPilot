@@ -28,3 +28,9 @@ Completed validation: full backend suite 392 passed in 62.81 seconds; final Mobi
 Removed the manual-savings introduction heading, explanatory paragraph and empty-state text beside Add savings. The collapsed section is now a standalone full-width mint Add savings button using the shared dashboard primaryButton/primaryButtonText styles, matching height, rounded corners and disabled/pressed feedback. The form opens on tap; existing entries retain their edit/remove controls. No empty card renders when there are no manual entries. The short double-counting guidance remains inside the opened form. Manual amounts, API, totals, migration and monthly savings behavior are unchanged.
 
 Mobile TypeScript and the existing mocked manual-savings flow check passed. Lint remains unavailable because no lint script exists. Actual phone layout remains unverified. No backend changes or new migrations. No commit, push or merge.
+
+## 14 October 2026 Always visible Add expense on Spending
+
+Moved the SpendingBreakdown Add an expense action outside its empty-data branch. Home > Spending now shows one Add an expense button beneath the breakdown for empty, populated and loading states. It uses the shared dashboard solid mint primary button and external spendingAddAction layout, matching the app's newer buttons. The existing onAddExpense callback still opens the Transactions add form; no navigation, recording or calculation behavior changed. Removed the old empty-state-only action so there is no duplicate button.
+
+Changed Mobile/src/components/dashboard/SpendingBreakdown.tsx and Mobile/src/styles/DashboardStyles.ts. Mobile TypeScript passed; lint remains unavailable because there is no lint script. Whitespace checks passed. Phone rendering remains unverified. No backend, migration or dependency changes, commit, push or merge.
