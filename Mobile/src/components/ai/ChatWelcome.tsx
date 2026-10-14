@@ -55,8 +55,8 @@ export default function ChatWelcome({ disabled, onSuggestion }: Props) {
 
         <Text style={ai.welcomeTitle}>How can I help with your money?</Text>
         <Text style={ai.welcomeText}>
-          Ask about budgeting, saving or debt. I use your recorded spending and income, and ask for
-          anything else I need.
+          Ask about budgeting, saving or debt. Goal planning uses your saved income and planned
+          monthly budget. Recorded spending is separate.
         </Text>
       </View>
 

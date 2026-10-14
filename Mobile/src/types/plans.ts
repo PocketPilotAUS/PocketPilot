@@ -3,9 +3,11 @@ export type PlanningProfile = {
  income: number | string | null; other_income: number | string | null; household_size: number | null;
  goal: string | null; goal_kind: "savings" | "debt" | "spending" | null;
  target_amount: number | string | null; current_amount: number | string | null; deadline: string | null;
+ monthly_contribution?: number | string | null;
  typical_months: string[]; expenses: Record<string, number | string | null>; protected_categories: string[];
 };
 export type FinancialPlan = {
+ budgetGoalSource?: boolean; confirmationKey?: string; draftFingerprint?: string; budgetFingerprint?: string; budgetChoices?: { protected: string[]; targets: Record<string, number>; fingerprint?: string };
  id?: string; ready: boolean; title: string; kind: string; profile: PlanningProfile;
  income: number; baselineSpending: number; availableBefore: number; availableAfter: number;
  requiredMonthly: number; monthlyContribution: number; unfundedMonthly: number; feasible: boolean;

@@ -13,8 +13,8 @@ import { DashboardData, monthName } from "../../utils/dashboard";
 import { BudgetCategoryDraft, validateBudgetSetup } from "../../utils/budgetSetup";
 import { EXPENSE_CATEGORIES, sanitizeAmount } from "../../utils/addExpense";
 
-type Props = { data: DashboardData; apiBaseUrl: string; onSaved: (data: DashboardData) => void; onCancel: () => void };
-export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel }: Props) {
+type Props = { data: DashboardData; apiBaseUrl: string; onSaved: (data: DashboardData) => void; onCancel: () => void; onBusyChange?: (busy: boolean) => void };
+export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel, onBusyChange }: Props) {
   const { palette } = useDashboardTheme(); const s = createBudgetSetupStyles(palette);
   const add = createAddExpenseStyles(palette);
   const [income, setIncome] = useState(data.income == null ? "" : amountDraft(data.income));
@@ -48,10 +48,10 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel }:
     if (locked.current) return;
     const problem = validateBudgetSetup(baseMoneyDraft(income), categories.map(row => ({ ...row, amount: baseMoneyDraft(row.amount) })));
     if (problem) { setError(problem); setReview(false); return; }
-    locked.current = true; setBusy(true); setError("");
+    locked.current = true; setBusy(true); onBusyChange?.(true); setError("");
     try { onSaved(await saveBudgetSetup(apiBaseUrl, data.year, data.month, String(toAED(income, data.income)), categories.map(row => ({ name: row.name.trim(), amount: String(toAED(row.amount, data.ideal_budget?.allocations.find(old => old.category === row.name)?.target)) })))); }
     catch (err) { if (!(err instanceof SessionExpiredError)) setError(err instanceof Error ? err.message : "Could not save your budget. Please try again."); }
-    finally { locked.current = false; setBusy(false); }
+    finally { locked.current = false; setBusy(false); onBusyChange?.(false); }
   };
   return <View style={s.card}>
     <Text style={s.title}>{review ? "Review your budget" : "Set up your budget"}</Text>

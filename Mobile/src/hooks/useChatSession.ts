@@ -1,8 +1,8 @@
-import { savePlan } from "../services/planningService";
+import { savePlan, confirmBudgetPlan } from "../services/planningService";
 import type { FinancialPlan, PlanningProfile } from "../types/plans";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
-import type { ChatMessage, Proposal } from "../types/chat";
+import type { ChatMessage, Proposal, BudgetGoal, BudgetChoice } from "../types/chat";
 import { getRuntimeLanguage } from "../preferences/localize";
 import { getCurrencyPreference } from "../preferences/currency";
 export type ChatError = { title: string; message: string; retry: boolean };
@@ -16,11 +16,13 @@ export default function useChatSession(apiBaseUrl: string) {
   const [error, setError] = useState<ChatError | null>(null);
   const [savingPlan, setSavingPlan] = useState<number | null>(null);
   const planLock = useRef(false);
+  const budgetChoices = useRef<{ protected: string[]; targets: Record<string, number>; fingerprint?: string }>({ protected: [], targets: {} });
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const sending = useRef(false);
   const epoch = useRef(0);
   const reset = () => {
+    budgetChoices.current = { protected: [], targets: {} };
     epoch.current += 1;
     controller.current?.abort();
     sending.current = false;
@@ -33,12 +35,23 @@ export default function useChatSession(apiBaseUrl: string) {
   }, []);
   // Same request as before: recent history (within the backend's limits),
   // with each record's status attached for the AI's context
-  const send = async (question: string, reviewBudget?: { year: number; month: number }) => {
+  const send = async (question: string, reviewBudget?: { year: number; month: number }, budgetChoice?: BudgetChoice, resumeBudgetGoal = false) => {
     if (sending.current || planLock.current || !question.trim()) return;
 
     if (question.trim().length > 16000) {
       setError({ title: "Message too long", message: "Keep your question under 16,000 characters.", retry: false });
       return;
+    }
+    if (budgetChoice) {
+      if (budgetChoices.current.fingerprint !== budgetChoice.fingerprint) budgetChoices.current.targets = {};
+      budgetChoices.current.fingerprint = budgetChoice.fingerprint;
+      if (budgetChoice.target === null) {
+        budgetChoices.current.protected = [...new Set([...budgetChoices.current.protected, budgetChoice.category])];
+        delete budgetChoices.current.targets[budgetChoice.category];
+      } else {
+        budgetChoices.current.protected = budgetChoices.current.protected.filter(name => name !== budgetChoice.category);
+        budgetChoices.current.targets[budgetChoice.category] = budgetChoice.target;
+      }
     }
     sending.current = true;
     setBusy(true);
@@ -65,6 +78,12 @@ export default function useChatSession(apiBaseUrl: string) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          goal_planning: !!budgetChoice || messages.some(message => message.goalPlanning),
+          require_budget: true,
+          budget_draft_fingerprint: [...messages].reverse().find(message => message.plan?.budgetGoalSource)?.plan?.draftFingerprint,
+          budget_draft_status: (() => { const message = [...messages].reverse().find(item => item.plan?.budgetGoalSource); return message ? message.plan!.id ? "saved" : message.planDeclined ? "declined" : "draft" : undefined; })(),
+          resume_budget_goal: resumeBudgetGoal,
+          budget_choices: budgetChoices.current,
           language: getRuntimeLanguage(),
           currency: selectedCurrency.currency,
           ...(selectedCurrency.currency === "CNY" ? { aed_to_cny: selectedCurrency.rate!.aedToCny } : {}),
@@ -85,14 +104,14 @@ export default function useChatSession(apiBaseUrl: string) {
         throw Object.assign(new Error(detail), { status: response.status });
       }
 
-      const data: { reply: string; proposal?: Proposal | null; plan?: FinancialPlan | null; planning_profile?: PlanningProfile | null } = await response.json();
+      const data: { reply: string; proposal?: Proposal | null; plan?: FinancialPlan | null; planning_profile?: PlanningProfile | null; goal_planning?: boolean; budget_required?: boolean; budget_goal?: BudgetGoal | null } = await response.json();
 
       if (typeof data.reply !== "string" || !data.reply.trim()) {
         throw Object.assign(new Error("Could not send your message. Please try again."), { status: 0 });
       }
 
       if (mounted.current && epoch.current === generation) {
-        onMessagesChange(current => [...current, pending, { role: "assistant", content: data.reply, proposal: data.proposal ?? undefined, plan: data.plan ?? undefined, planningProfile: data.planning_profile ?? undefined }]);
+        onMessagesChange(current => [...current, pending, { role: "assistant", content: data.reply, proposal: data.proposal ?? undefined, plan: data.plan ?? undefined, planningProfile: data.planning_profile ?? undefined, goalPlanning: data.goal_planning, budgetRequired: data.budget_required, budgetGoal: data.budget_goal ?? undefined }]);
       }
     } catch (err) {
       if (!mounted.current || epoch.current !== generation || err instanceof SessionExpiredError) return;
@@ -127,11 +146,11 @@ export default function useChatSession(apiBaseUrl: string) {
   };
 
   const saveFinancialPlan = async (plan: FinancialPlan, index: number) => {
-    if (planLock.current || sending.current || plan.id) return;
+    if (planLock.current || sending.current || plan.id || !plan.ready) return;
     planLock.current = true; setSavingPlan(index); setError(null);
     const generation = epoch.current;
     try {
-      const saved = await savePlan(apiBaseUrl, plan.profile);
+      const saved = plan.budgetGoalSource ? await confirmBudgetPlan(apiBaseUrl, plan) : await savePlan(apiBaseUrl, plan.profile);
       if (mounted.current && generation === epoch.current) onMessagesChange(current => current.map((message, i) => i === index ? { ...message, plan: saved } : message));
     } catch (err) {
       if (mounted.current && generation === epoch.current && !(err instanceof SessionExpiredError)) setError({ title: "Could not save plan", message: (err as Error).message, retry: false });

@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StatusBar } from "react-native";
 import { Text, View, TextInput, Alert } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CreditCard, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react-native";
+import DebtPaymentsPanel from "../components/DebtPaymentsPanel";
 import BackButton from "../components/BackButton";
 import { navigationStyles } from "../styles/NavigationStyles";
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
@@ -69,7 +70,7 @@ export default function DebtScreen({ apiBaseUrl, onBack }: { apiBaseUrl: string;
           </View>
         </View>
         <CurrencyNotice />
-        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Your debts</Text>{!formOpen && <Pressable disabled={busy} onPress={() => open()} accessibilityRole="button" accessibilityLabel="Add debt" style={({ pressed }) => [styles.pill, s.pill, busy && styles.buttonDisabled, pressed && s.pressed]}><Plus size={16} color={palette.accent} /><Text style={styles.pillText}>Add debt</Text></Pressable>}</View>
+        <View style={s.sectionHeader}><Text style={s.sectionTitle}>Your debts</Text>{!formOpen && <Pressable disabled={busy} onPress={() => open()} accessibilityRole="button" accessibilityLabel="Add debt" style={({ pressed }) => [styles.compactAddButton, busy && styles.buttonDisabled, pressed && styles.buttonDisabled]}><Plus size={16} color={palette.onAccent} strokeWidth={2.6} /><Text style={styles.compactAddButtonText}>Add debt</Text></Pressable>}</View>
         {formOpen && <View style={styles.card}>
           <Text style={s.formTitle}>{editing ? "Edit debt" : "Add debt"}</Text><Text style={styles.cardSubtitle}>Enter the principal still owed, excluding future interest.</Text>
           {inputField("name", "Debt name", { text: true })}
@@ -97,6 +98,7 @@ export default function DebtScreen({ apiBaseUrl, onBack }: { apiBaseUrl: string;
             <Pressable disabled={busy} onPress={() => deleteDebt(debt)} accessibilityRole="button" accessibilityLabel="Delete debt" style={({ pressed }) => [s.deleteButton, busy && styles.buttonDisabled, pressed && s.pressed]}><Trash2 size={17} color={palette.danger} /></Pressable>
           </View>
         </View>)}
+        {!formOpen && <DebtPaymentsPanel apiBaseUrl={apiBaseUrl} debts={debts} busy={busy} onBusyChange={setBusy} />}
         <Text style={[styles.mutedText, s.note]}>Estimates assume fixed interest and equal monthly payments. Fees are excluded. Update balances manually from your lender statement.</Text>
       </>}
       {loadFailed && !busy && <Pressable onPress={() => { void refresh(); }} accessibilityRole="button" style={[styles.primaryButton, s.retry]}><Text style={styles.primaryButtonText}>Retry</Text></Pressable>}

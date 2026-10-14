@@ -17,6 +17,7 @@ class PlanningInput(BaseModel):
     target_amount: Money | None = None
     current_amount: Money | None = Field(default=None, description="Money ALREADY saved or paid toward this goal, never salary or monthly income.")
     deadline: date | None = Field(default=None, description="User requested future target date YYYY-MM-DD. Never invent a deadline.")
+    monthly_contribution: Money | None = Field(default=None, description="Monthly savings contribution explicitly chosen by the user for this goal, NOT income or money already saved. Must be positive.")
     # Only months explicitly marked complete/typical may establish a baseline.
     typical_months: list[str] = Field(default_factory=list, max_length=12)
     expenses: dict[str, Money | None] = Field(default_factory=dict, description="Baseline monthly costs explicitly stated by user. Allowed category names: Rent, Food, Transport, Bills, Debt payments, Entertainment, Shopping, Subscriptions, Other. Never invent zero costs.")
@@ -25,6 +26,8 @@ class PlanningInput(BaseModel):
     @model_validator(mode="after")
     def validate_profile(self):
         import re
+        if self.monthly_contribution is not None and self.monthly_contribution <= 0:
+            raise ValueError("Choose a positive monthly contribution")
         if any(key not in CATEGORIES for key in self.expenses) or any(key not in CATEGORIES for key in self.protected_categories):
             raise ValueError("Unknown expense category")
         if any(not re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", month) or int(month[:4]) < 1 for month in self.typical_months):

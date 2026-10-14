@@ -19,6 +19,8 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionResponse
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.ai.explanation import prepare_ai_explanation
 from app.ai.client import generate_ai_explanation
 
@@ -34,6 +36,17 @@ from app.algorithms.recommendations import generate_spending_recommendations
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PocketPilot API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 app.include_router(auth.router)
 app.include_router(chat.router)

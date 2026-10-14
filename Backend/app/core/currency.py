@@ -3,10 +3,10 @@ from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
 MONEY_KEYS = {
     "amount", "income", "other_income", "target_amount", "current_amount", "current_income",
-    "spent", "remaining", "planned_total", "planned_remaining", "target", "baseline",
+    "monthly_contribution", "spent", "remaining", "planned_total", "planned_remaining", "target", "baseline",
     "baselineSpending", "availableBefore", "availableAfter", "requiredMonthly", "monthlyContribution",
     "unfundedMonthly", "targetAmount", "savedAmount", "monthlyAmount", "historicalMonthly",
-    "plannedMonthly", "difference", "overBy", "total_spending",
+    "plannedMonthly", "difference", "overBy", "total_spending", "scenarioAvailable", "scenarioUnfunded",
 }
 MONEY_MAPS = {"expenses", "category_spending", "recorded_spending", "past_months", "recurring_obligations"}
 
@@ -36,7 +36,7 @@ def base_patch(value, rate):
     if not isinstance(value, dict):
         return value
     result = dict(value)
-    for key in ("amount", "income", "other_income", "target_amount", "current_amount"):
+    for key in ("amount", "income", "other_income", "target_amount", "current_amount", "monthly_contribution"):
         if result.get(key) is not None:
             if isinstance(result[key], bool):
                 raise ValueError("Invalid money")

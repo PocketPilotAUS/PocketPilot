@@ -6,7 +6,7 @@ export const percentOf = (value: number, total: number) => total > 0 ? clampPerc
 export function planScenario(plan: FinancialPlan, proposed: boolean) {
   const spending = plan.allocations.reduce((sum, row) => sum + (proposed ? row.target : row.baseline), 0);
   const available = proposed ? plan.availableAfter : plan.availableBefore;
-  const contribution = Math.max(0, Math.min(plan.requiredMonthly, available));
+  const contribution = Math.max(0, Math.min(plan.budgetGoalSource ? plan.monthlyContribution : plan.requiredMonthly, available));
   return { spending, available, contribution, shortfall: Math.max(0, plan.requiredMonthly - available),
     fundedPercent: percentOf(contribution, plan.requiredMonthly), expenseDeficit: Math.max(0, -available) };
 }

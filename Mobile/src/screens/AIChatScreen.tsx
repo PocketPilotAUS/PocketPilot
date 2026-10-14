@@ -1,7 +1,13 @@
 import type { PlanningProfile } from "../types/plans";
-import FinancialPlanCard from "../components/ai/FinancialPlanCard";
+import BudgetGoalCard from "../components/ai/BudgetGoalCard";
+import { formatAED } from "../utils/dashboard";
+import type { BudgetChoice } from "../types/chat";
+import PlanConfirmationActions from "../components/ai/PlanConfirmationActions";
+import BudgetPlanEditor from "../components/ai/BudgetPlanEditor";
+import BackButton from "../components/BackButton";
+import type { FinancialPlan } from "../types/plans";
 import React, { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar } from "react-native";
 import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowUp, CloudOff, RefreshCw, Sparkles, SquarePen } from "lucide-react-native";
@@ -20,6 +26,7 @@ import type useChatSession from "../hooks/useChatSession";
 
 type Props = {
   apiBaseUrl: string;
+  onSetupBudget: () => void;
   onReviewProfile: (profile: PlanningProfile) => void;
   session: ReturnType<typeof useChatSession>;
 };
@@ -27,7 +34,7 @@ type Props = {
 
 
 
-export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile }: Props) {
+export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onSetupBudget }: Props) {
   const { messages, onMessagesChange, draft, setDraft, busy, pendingQuestion, error, setError } = session;
   const send = (question = draft) => {
     if (proposalLock.current || session.savingPlan !== null) return;
@@ -36,6 +43,8 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile }: P
   const { ai, styles, palette, mode } = useAITheme();
 
   const [savingProposal, setSavingProposal] = useState<string | null>(null);
+  const [editingGoal, setEditingGoal] = useState<FinancialPlan | null>(null);
+  const [editingGoalBusy, setEditingGoalBusy] = useState(false);
 
   const proposalLock = useRef(false);
   const mounted = useRef(true);
@@ -117,8 +126,16 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile }: P
         </View>
         <View style={[ai.bubble, ai.assistantBubble]}>
           <FormattedMessage content={message.content} />
-          {message.planningProfile && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
-          {message.plan && <FinancialPlanCard plan={message.plan} busy={busy || session.savingPlan !== null} onSave={!message.plan.id ? () => { void session.saveFinancialPlan(message.plan!, index); } : undefined} />}
+          {message.budgetRequired && !messages.slice(index + 1).some(item => item.budgetGoal) && <Pressable disabled={busy || session.savingPlan !== null} onPress={onSetupBudget} style={[styles.primaryButton, styles.budgetSetupAction, busy && styles.buttonDisabled]} accessibilityRole="button"><Text style={styles.primaryButtonText}>Set up my budget</Text></Pressable>}
+          {message.budgetGoal && <BudgetGoalCard assessment={message.budgetGoal} disabled={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.budgetGoal)} onChoice={(choice: BudgetChoice) => {
+            const prompt = choice.category === "*" ? (choice.target === null ? "My budget cannot be reduced. Keep all categories protected and suggest a later goal deadline." : "I am willing to explore possible budget cuts again. Ask what is realistic for me.") : choice.target === null ? `I cannot reduce ${choice.category}. Keep it protected for this goal.` : `For this goal scenario, I can manage ${choice.category} on ${formatAED(choice.target)} per month. My saved budget should stay unchanged.`;
+            void session.send(prompt, undefined, choice);
+          }} />}
+          {message.planningProfile && !message.goalPlanning && !message.plan?.ready && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
+          {message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan)}
+            onConfirm={() => { void session.saveFinancialPlan(message.plan!, index); }}
+            onEdit={() => { if (message.plan!.budgetGoalSource) { setEditingGoal(message.plan!); } else { onReviewProfile(message.plan!.profile); } }}
+            onDecline={() => { onMessagesChange(current => current.map((item, i) => i === index ? { ...item, planDeclined: true } : item)); }} />}
           {proposal && (
             <ProposalCard
               proposal={proposal}
@@ -158,6 +175,12 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile }: P
 
   return (
     <SafeAreaView style={ai.screen} edges={["top", "left", "right"]}>
+      <Modal visible={editingGoal !== null} animationType="slide" onRequestClose={() => { if (!editingGoalBusy) setEditingGoal(null); }}>
+        <SafeAreaView style={ai.screen} edges={["top", "left", "right"]}><ScrollView contentContainerStyle={ai.conversation} keyboardShouldPersistTaps="handled">
+          <BackButton label="Back to AI Chat" disabled={editingGoalBusy} onPress={() => setEditingGoal(null)} />
+          {editingGoal && <BudgetPlanEditor plan={editingGoal} apiBaseUrl={apiBaseUrl} onBusyChange={setEditingGoalBusy} onCancel={() => setEditingGoal(null)} onPreview={plan => { session.addPlanPreview(plan); setEditingGoal(null); }} />}
+        </ScrollView></SafeAreaView>
+      </Modal>
       <StatusBar barStyle={mode === "dark" ? "light-content" : "dark-content"} />
 
       <View style={ai.header}>

@@ -11,3 +11,9 @@ export async function planningRequest<T>(base: string, path: string, method = "G
 export const getPlanningContext = (base: string) => planningRequest<PlanningContext>(base, "/context");
 export const getPlans = (base: string) => planningRequest<FinancialPlan[]>(base, "/plans");
 export const savePlan = (base: string, profile: PlanningProfile, id?: string) => planningRequest<FinancialPlan>(base, id ? `/plans/${id}` : "/plans", id ? "PUT" : "POST", profile);
+
+export async function confirmBudgetPlan(base: string, plan: FinancialPlan, id?: string): Promise<FinancialPlan> {
+  const response = await apiFetch(base, id ? `/planning/budget-plans/${id}` : "/planning/budget-plans", { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile: plan.profile, choices: plan.budgetChoices ?? {}, budget_fingerprint: plan.budgetFingerprint, request_key: plan.confirmationKey }) });
+  if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(typeof data.detail === "string" ? data.detail : "Could not confirm plan. Please try again."); }
+  return response.json();
+}

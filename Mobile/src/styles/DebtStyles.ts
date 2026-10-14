@@ -1,6 +1,9 @@
 import { StyleSheet } from "react-native";
 import type { DashboardPalette } from "./DashboardStyles";
 export const createDebtStyles = (p: DashboardPalette) => StyleSheet.create({
+  paymentRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: p.border },
+  paymentName: { flex: 1, color: p.text, fontSize: 15, fontWeight: "600" },
+  paymentBody: { flex: 1, gap: 4 },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 4, marginBottom: 16 },
   sectionTitle: { color: p.text, fontSize: 18, fontWeight: "700", flex: 1 },
   icon: { width: 42, height: 42, borderRadius: 14, backgroundColor: p.accentSoft, alignItems: "center", justifyContent: "center" },
@@ -24,6 +27,7 @@ export const createDebtStyles = (p: DashboardPalette) => StyleSheet.create({
   empty: { alignItems: "center", paddingVertical: 12, gap: 12 },
   emptyText: { color: p.textMuted, fontSize: 13, lineHeight: 20, textAlign: "center" },
   retry: { flexGrow: 0, marginBottom: 16 },
-  pill: { minHeight: 44 },
+  pill: { minHeight: 44, backgroundColor: p.accent },
+  addDebtText: { color: p.onAccent },
   pressed: { opacity: .75 },
 });

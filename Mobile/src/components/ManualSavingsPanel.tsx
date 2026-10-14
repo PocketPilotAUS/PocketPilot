@@ -46,7 +46,7 @@ export default function ManualSavingsPanel({ apiBaseUrl, entries, disabled, onBu
     finally { locked.current = false; onBusyChange(false); }
   } }]);
   return <View>
-    {!open && <Pressable disabled={disabled} onPress={() => start()} accessibilityRole="button" accessibilityLabel="Add savings" accessibilityState={{ disabled }} style={({ pressed }) => [d.primaryButton, s.manualAddButton, disabled && d.buttonDisabled, pressed && s.manualPressed]}><Plus size={17} color={palette.onAccent} /><Text style={d.primaryButtonText}>Add savings</Text></Pressable>}
+    {!open && <Pressable disabled={disabled} onPress={() => start()} accessibilityRole="button" accessibilityLabel="Add savings" accessibilityState={{ disabled }} style={({ pressed }) => [d.compactAddButton, s.manualAddButton, disabled && d.buttonDisabled, pressed && d.buttonDisabled]}><Plus size={16} color={palette.onAccent} strokeWidth={2.6} /><Text style={d.compactAddButtonText}>Add savings</Text></Pressable>}
     {(open || entries.length > 0 || !!error) && <View style={d.card}>
     {!!error && <Text style={d.formError} accessibilityRole="alert">{error}</Text>}
     {open && <>
