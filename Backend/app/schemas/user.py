@@ -87,7 +87,13 @@ class UserResponse(BaseModel):
         return value
 
 
+class RefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    refresh_token: str = Field(min_length=64, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class Token(BaseModel):
+    refresh_token: str
     access_token: str
     token_type: Literal["bearer"] = "bearer"
     expires_in: int

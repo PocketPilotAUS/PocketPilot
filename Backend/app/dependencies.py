@@ -1,12 +1,14 @@
+import time
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.security import InvalidTokenError, decode_access_token
+from app.core.security import InvalidTokenError, decode_access_token, access_session_id
 from app.database import get_db
 from app.models.user import User
+from app.models.refresh_session import RefreshSession
 from app.models.account_settings import get_account_settings
 
 # auto_error=False lets get_current_user return the same 401 response for
@@ -45,6 +47,16 @@ def get_current_user(
         decode_access_token(credentials.credentials, expected_version=settings.token_version if settings else 0)
     except InvalidTokenError:
         raise credentials_error() from None
+
+    try:
+        sid = access_session_id(credentials.credentials)
+    except InvalidTokenError:
+        # Invalid/expired JWTs never reach the protected route.
+        raise credentials_error() from None
+    if sid is not None:
+        session = db.get(RefreshSession, sid)
+        if session is None or session.user_id != user.id or session.revoked or session.expires_at <= int(time.time()):
+            raise credentials_error()
 
     return user
 

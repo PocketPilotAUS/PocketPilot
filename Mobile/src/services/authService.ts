@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { clearToken, getToken, saveToken } from "./tokenStorage";
+import { clearToken, getToken, getSession, saveSession } from "./tokenStorage";
+import { apiFetch, SessionExpiredError } from "./apiClient";
 
 // Keys used by the old demo login, which stored plain-text passwords on the
 // device. They are removed on start-up and logout so test devices are cleaned.
@@ -47,6 +48,7 @@ export type RestoreResult =
   | { status: "offline" };
 
 type TokenResponse = {
+  refresh_token: string;
   access_token: string;
   token_type: string;
   expires_in: number;
@@ -235,7 +237,7 @@ export async function login(
   }
 
   try {
-    const { access_token }: TokenResponse = await response.json();
+    const { access_token, refresh_token }: TokenResponse = await response.json();
 
     // Load the profile with the new token before saving it
     const profile = await fetchProfile(apiBaseUrl, access_token);
@@ -246,7 +248,7 @@ export async function login(
 
     const user: AuthUser = await profile.json();
 
-    await saveToken(access_token);
+    await saveSession({ access_token, refresh_token });
 
     return { success: true, message: successMessage, user };
   } catch {
@@ -270,7 +272,7 @@ export async function restoreSession(
   const timeout = setTimeout(() => controller.abort(), RESTORE_TIMEOUT_MS);
 
   try {
-    const response = await fetchProfile(apiBaseUrl, token, controller.signal);
+    const response = await apiFetch(apiBaseUrl, "/auth/me", { signal: controller.signal });
 
     if (response.status === 401) {
       // Expired or invalid token
@@ -285,14 +287,30 @@ export async function restoreSession(
     const user: AuthUser = await response.json();
 
     return { status: "authenticated", user };
-  } catch {
+  } catch (error) {
+    if (error instanceof SessionExpiredError) return { status: "signedOut" };
     return { status: "offline" };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function logout(): Promise<void> {
-  await clearToken();
+export async function logout(apiBaseUrl: string): Promise<void> {
+  const session = await getSession();
+  await clearToken(); // Late refresh responses cannot resurrect this login.
+  if (session?.refresh_token) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      await fetch(`${apiBaseUrl}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+        signal: controller.signal,
+      });
+    } catch {
+      // Offline logout still clears this device. Remote revocation needs connectivity.
+    } finally { clearTimeout(timeout); }
+  }
   await removeLegacyDemoData();
 }

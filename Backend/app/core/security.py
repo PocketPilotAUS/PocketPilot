@@ -58,7 +58,8 @@ def simulate_password_check(password: str) -> None:
 def create_access_token(
     user_id: int,
     expires_delta: timedelta | None = None,
-    token_version: int = 0
+    token_version: int = 0,
+    session_id: str | None = None
 ) -> str:
     if expires_delta is None:
         expires_delta = timedelta(minutes=get_access_token_expire_minutes())
@@ -73,6 +74,9 @@ def create_access_token(
         "iat": issued_at,
         "exp": issued_at + expires_delta
     }
+
+    if session_id is not None:
+        payload["sid"] = session_id
 
     return jwt.encode(payload, get_jwt_secret_key(), algorithm=JWT_ALGORITHM)
 
@@ -112,3 +116,15 @@ def decode_access_token(token: str, expected_version: int | None = None) -> int:
         raise InvalidTokenError("Invalid token subject")
 
     return user_id
+
+
+def access_session_id(token: str) -> str | None:
+    # Called only after decode_access_token has authenticated this JWT.
+    try:
+        payload = jwt.decode(token, get_jwt_secret_key(), algorithms=[JWT_ALGORITHM])
+    except jwt.PyJWTError as error:
+        raise InvalidTokenError("Invalid or expired token") from error
+    sid = payload.get("sid")
+    if sid is not None and (not isinstance(sid, str) or len(sid) != 48):
+        raise InvalidTokenError("Invalid session")
+    return sid

@@ -1,9 +1,10 @@
 
-import React from "react";
-import { StatusBar } from "react-native";
+import React, { useRef, useState } from "react";
+import { Modal, StatusBar } from "react-native";
 import { Text, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { TriangleAlert } from "lucide-react-native";
+import AddTransactionScreen from "./AddTransactionScreen";
 import BackButton from "../components/BackButton";
 import { navigationStyles } from "../styles/NavigationStyles";
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
@@ -16,7 +17,8 @@ type Props = {
   loading: boolean;
   error: string;
   onBack: () => void;
-  onAddExpense: () => void;
+  apiBaseUrl: string;
+  onExpenseSaved: () => void;
 };
 
 export default function SpendingScreen({
@@ -24,9 +26,15 @@ export default function SpendingScreen({
   loading,
   error,
   onBack,
-  onAddExpense,
+  apiBaseUrl,
+  onExpenseSaved,
 }: Props) {
   const { styles, palette, mode } = useDashboardTheme();
+  const [adding, setAdding] = useState(false);
+  const saving = useRef(false);
+  const close = () => {
+    if (!saving.current) setAdding(false);
+  };
 
   return (
     <SafeAreaView
@@ -57,9 +65,22 @@ export default function SpendingScreen({
         <SpendingBreakdown
           data={data}
           loading={loading}
-          onAddExpense={onAddExpense}
+          onAddExpense={() => setAdding(true)}
         />
       </KeyboardFormScrollView>
+      <Modal visible={adding} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
+        {adding && <AddTransactionScreen
+          apiBaseUrl={apiBaseUrl}
+          budgetCategories={data?.ideal_budget?.allocations.map(row => row.category)}
+          onBack={close}
+          onBusyChange={busy => { saving.current = busy; }}
+          onSaved={() => {
+            saving.current = false;
+            setAdding(false);
+            onExpenseSaved();
+          }}
+        />}
+      </Modal>
     </SafeAreaView>
   );
 }
