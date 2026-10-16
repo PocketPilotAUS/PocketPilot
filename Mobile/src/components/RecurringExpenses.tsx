@@ -7,14 +7,16 @@ import BottomSheet from "./transactions/BottomSheet";
 import CategoryIcon from "./transactions/CategoryIcon";
 import { useTransactionsTheme } from "./transactions/useTransactionsTheme";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
+import { Debt, loadDebts } from "../services/debtService";
 import { formatAED } from "../utils/dashboard";
 import { formatShortDate } from "../utils/transactions";
 
 type Schedule = { id: number; amount: number; category: string; description: string | null; day: number; next_date: string; active: boolean };
 
 // Compact rows matching the transaction list; editing and stopping happen in a sheet
-export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUrl: string; onChanged: () => void }) {
+export default function RecurringExpenses({ apiBaseUrl, onChanged, onOpenDebt }: { apiBaseUrl: string; onChanged: () => void; onOpenDebt?: () => void }) {
   const { styles, tx, palette } = useTransactionsTheme();
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
@@ -31,7 +33,7 @@ export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUr
     let active = true;
     setLoading(true);
     const load = async () => {
-      try { const response = await apiFetch(apiBaseUrl, "/recurring/"); if (!response.ok) throw new Error(); const data = await response.json(); if (active) { setSchedules(data); setError(""); } }
+      try { const [response, debtRows] = await Promise.all([apiFetch(apiBaseUrl, "/recurring/"), loadDebts(apiBaseUrl)]); if (!response.ok) throw new Error(); const data = await response.json(); if (active) { setSchedules(data); setDebts(debtRows.filter(row => row.total_left_to_pay > 0)); setError(""); } }
       catch (err) { if (active && !(err instanceof SessionExpiredError)) setError("Could not load recurring expenses."); }
       finally { if (active) setLoading(false); }
     };
@@ -55,7 +57,7 @@ export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUr
     finally { locked.current = false; setBusy(false); }
   };
   const stop = (schedule: Schedule) => Alert.alert("Stop repeating?", "Future payments will stop. Previously recorded expenses remain.", [{ text: "Cancel", style: "cancel" }, { text: "Stop", style: "destructive", onPress: () => { void update(schedule, true); } }]);
-  const active = schedules.filter(schedule => schedule.active).length;
+  const active = schedules.filter(schedule => schedule.active).length + debts.filter(debt => debt.automatic_day != null).length;
 
   return <View>
     <View style={tx.groupHeader}>
@@ -67,7 +69,7 @@ export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUr
       <Text style={styles.mutedText}>{error}</Text>
       <Pressable onPress={() => setRefresh(value => value + 1)} style={styles.pill} accessibilityRole="button"><RefreshCw size={13} color={palette.accent} /><Text style={styles.pillText}>Retry</Text></Pressable>
     </View>}
-    {!loading && !error && schedules.length === 0 && <View style={[tx.groupCard, tx.recurringState]}>
+    {!loading && !error && schedules.length === 0 && debts.length === 0 && <View style={[tx.groupCard, tx.recurringState]}>
       <Repeat size={18} color={palette.textMuted} />
       <Text style={styles.mutedText}>Turn on Repeat monthly when adding an expense.</Text>
     </View>}
@@ -86,6 +88,18 @@ export default function RecurringExpenses({ apiBaseUrl, onChanged }: { apiBaseUr
           </Pressable>}
         </View>;
       })}
+    </View>}
+
+    {!loading && !error && debts.length > 0 && <View style={tx.groupCard}>
+      {debts.map((debt, index) => <View key={`debt:${debt.id}`} style={[tx.row, index > 0 && tx.rowDivider]}>
+        <CategoryIcon category="Debt" />
+        <View style={tx.rowText}>
+          <Text style={tx.rowTitle} numberOfLines={1}>Debt<Text localize={false} style={tx.rowSubtitle}> - {debt.name}</Text></Text>
+          <Text style={tx.rowSubtitle} numberOfLines={1}>{debt.next_due ? `Monthly - Next ${formatShortDate(debt.next_due)}` : "Monthly - Automatic payments off"}</Text>
+        </View>
+        <Text style={tx.rowAmount}>{formatAED(debt.estimated_monthly_payment)}</Text>
+        {onOpenDebt && <Pressable onPress={onOpenDebt} style={tx.recurringEdit} accessibilityRole="button" accessibilityLabel={`Manage recurring debt ${debt.name}`}><Pencil size={15} color={palette.textSecondary} strokeWidth={2.2} /></Pressable>}
+      </View>)}
     </View>}
 
     <BottomSheet visible={editing !== null} title="Edit recurring expense" onClose={close}>

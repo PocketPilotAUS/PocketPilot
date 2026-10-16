@@ -1,8 +1,9 @@
 // Search, filtering, sorting and grouping for the Transactions screen.
-// Everything runs on the user's real transactions from GET /transactions/.
+// Transaction rows and recorded debt payments share one display list; no duplicate ledger entries are created.
 
 export type Transaction = {
   id: number;
+  debt_payment_id?: number;
   amount: number;
   category: string;
   description: string | null;
@@ -282,4 +283,17 @@ export function parseAmountFilter(
       if (min > max) return "The minimum must not be more than the maximum.";
       return { kind: "between", min, max };
   }
+}
+
+
+// Negative display IDs keep debt-payment IDs separate from transaction IDs.
+export function debtPaymentTransactions(payments: { id: number; amount: number; paid_on: string; debt_name: string; automatic?: boolean }[]): Transaction[] {
+  return payments.map(payment => ({
+    id: -payment.id,
+    debt_payment_id: payment.id,
+    amount: payment.amount,
+    category: "Debt",
+    description: `${payment.debt_name}${payment.automatic ? " - Automatically recorded" : " - Debt payment"}`,
+    date: payment.paid_on,
+  }));
 }

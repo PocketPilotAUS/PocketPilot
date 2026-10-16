@@ -58,8 +58,8 @@ def debt_dues(db, user_id, year, month, paid, budget_names):
         # A budget category for debt already plans these payments
         return Decimal(0)
     from app.models.debt import Debt
-    from app.routers.debts import estimate
-    expected = sum((money(estimate(row.balance, row.annual_rate, row.remaining_months)[0])
+    from app.routers.debts import serialize
+    expected = sum((money(serialize(row, db)["estimated_monthly_payment"])
                     for row in db.query(Debt).filter_by(user_id=user_id).all() if row.remaining_months > 0), Decimal(0))
     return max(Decimal(0), expected - paid)
 

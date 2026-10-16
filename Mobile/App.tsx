@@ -275,6 +275,7 @@ function PocketPilotApp() {
   if (screen === "history") {
     return withNavigation(
       <TransactionsScreen
+        onOpenDebt={() => setScreen("debt")}
         apiBaseUrl={API_BASE_URL}
         budgetCategories={spending?.ideal_budget?.allocations.map(row => row.category)}
       />

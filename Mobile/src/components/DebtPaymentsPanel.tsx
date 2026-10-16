@@ -9,8 +9,8 @@ import { formatAED } from "../utils/dashboard";
 import { newRequestKey } from "../utils/addExpense";
 
 const today = () => new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
-type Props = { apiBaseUrl: string; debts: Debt[]; busy: boolean; onBusyChange: (value: boolean) => void };
-export default function DebtPaymentsPanel({ apiBaseUrl, debts, busy, onBusyChange }: Props) {
+type Props = { apiBaseUrl: string; debts: Debt[]; busy: boolean; onBusyChange: (value: boolean) => void; onChanged: () => void };
+export default function DebtPaymentsPanel({ apiBaseUrl, debts, busy, onBusyChange, onChanged }: Props) {
   const { styles: d, palette } = useDashboardTheme();
   const s = createDebtStyles(palette);
   const [payments, setPayments] = useState<DebtPayment[]>([]);
@@ -41,7 +41,7 @@ export default function DebtPaymentsPanel({ apiBaseUrl, debts, busy, onBusyChang
     locked.current = true; onBusyChange(true); setError("");
     try {
       const row = await recordDebtPayment(apiBaseUrl, selected.id, { amount: value, paid_on: paidOn, request_key: key.current });
-      if (mounted.current) { setPayments(rows => [row, ...rows.filter(item => item.id !== row.id)].sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.id - a.id)); setSelected(null); }
+      if (mounted.current) { setPayments(rows => [row, ...rows.filter(item => item.id !== row.id)].sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.id - a.id)); setSelected(null); onChanged(); }
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Could not record payment."); }
     finally { locked.current = false; if (mounted.current) onBusyChange(false); }
   };
@@ -49,7 +49,7 @@ export default function DebtPaymentsPanel({ apiBaseUrl, debts, busy, onBusyChang
     { text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: async () => {
       if (busy || locked.current) return;
       locked.current = true; onBusyChange(true);
-      try { await removeDebtPayment(apiBaseUrl, row.id); if (mounted.current) setPayments(rows => rows.filter(item => item.id !== row.id)); }
+      try { await removeDebtPayment(apiBaseUrl, row.id); if (mounted.current) { setPayments(rows => rows.filter(item => item.id !== row.id)); onChanged(); } }
       catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Could not remove payment."); }
       finally { locked.current = false; if (mounted.current) onBusyChange(false); }
     } },
@@ -63,11 +63,11 @@ export default function DebtPaymentsPanel({ apiBaseUrl, debts, busy, onBusyChang
       <Text style={d.editorLabel}>Amount paid</Text>
       <View style={d.inputRow}><Text style={d.inputPrefix}>{currencyCode()}</Text><TextInput value={amount} onChangeText={setAmount} editable={!busy} keyboardType="decimal-pad" maxLength={18} style={d.input} placeholder="0.00" placeholderTextColor={palette.textMuted} accessibilityLabel="Amount paid" /></View>
       <View style={s.field}><Text style={d.editorLabel}>Payment date (YYYY-MM-DD)</Text><TextInput value={paidOn} onChangeText={setPaidOn} editable={!busy} maxLength={10} style={s.fieldInput} placeholder="YYYY-MM-DD" placeholderTextColor={palette.textMuted} accessibilityLabel="Payment date" /></View>
-      <Text style={s.hint}>The payment includes interest. Update your outstanding principal separately from your lender statement.</Text>
+      <Text style={s.hint}>The full payment reduces this loan's total left to pay.</Text>
       <View style={d.buttonRow}><Pressable disabled={busy} onPress={() => { setSelected(null); setError(""); }} style={[d.secondaryButton, busy && d.buttonDisabled]} accessibilityRole="button"><Text style={d.secondaryButtonText}>Cancel</Text></Pressable><Pressable disabled={busy} onPress={() => { void save(); }} style={[d.primaryButton, busy && d.buttonDisabled]} accessibilityRole="button"><Text style={d.primaryButtonText}>{busy ? "Saving…" : "Save payment"}</Text></Pressable></View>
     </> : debts.map(debt => <View key={debt.id} style={s.paymentRow}><Text localize={false} style={s.paymentName}>{debt.name}</Text><Pressable disabled={busy || loading} onPress={() => start(debt)} style={[d.compactAddButton, (busy || loading) && d.buttonDisabled]} accessibilityRole="button" accessibilityLabel="Record payment"><Text style={d.compactAddButtonText}>Record payment</Text></Pressable></View>)}
     {!loading && !payments.length && <Text style={[d.mutedText, s.field]}>No debt payments recorded yet.</Text>}
-    {payments.map(row => <View key={row.id} style={s.paymentRow}><View style={s.paymentBody}><Text localize={false} style={s.debtName}>{row.debt_name}</Text><Text style={d.mutedText}>{row.paid_on}</Text><Text style={d.statValue}>{formatAED(row.amount)}</Text></View><Pressable disabled={busy} onPress={() => remove(row)} style={[s.editButton, busy && d.buttonDisabled]} accessibilityRole="button" accessibilityLabel="Remove payment"><Text style={s.editText}>Remove</Text></Pressable></View>)}
+    {payments.map(row => <View key={row.id} style={s.paymentRow}><View style={s.paymentBody}><Text localize={false} style={s.debtName}>{row.debt_name}</Text><Text style={d.mutedText}>{row.paid_on}{row.automatic ? " - Automatically recorded" : ""}</Text><Text style={d.statValue}>{formatAED(row.amount)}</Text></View><Pressable disabled={busy} onPress={() => remove(row)} style={[s.editButton, busy && d.buttonDisabled]} accessibilityRole="button" accessibilityLabel="Remove payment"><Text style={s.editText}>Remove</Text></Pressable></View>)}
     {!!error && !selected && <Pressable disabled={busy} onPress={() => setRevision(value => value + 1)} style={d.secondaryButton} accessibilityRole="button"><Text style={d.secondaryButtonText}>Refresh payments</Text></Pressable>}
   </View>;
 }

@@ -24,10 +24,13 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel, o
   const [categoryAmount, setCategoryAmount] = useState("");
   const [review, setReview] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const locked = useRef(false);
+  const automaticDebt = data.ideal_budget?.allocations.find(row => row.automatic && row.category === "Debt");
+  const isAutomatic = (name: string) => !!automaticDebt && name.trim().toLowerCase() === "debt";
   const total = categories.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const left = Number(income || 0) - total;
   const categoryTiles = [...new Map([...EXPENSE_CATEGORIES, ...categories.map(row => row.name)].map(name => [name.toLowerCase(), name])).values()];
   const choose = (name: string) => {
+    if (isAutomatic(name)) return;
     setError(""); setSelected(name); setCustomName("");
     setCategoryAmount(categories.find(row => row.name.toLowerCase() === name.toLowerCase())?.amount ?? "");
   };
@@ -35,6 +38,7 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel, o
   const addCategory = () => {
     if (selected === null || busy) return;
     const name = selected === "" ? customName.trim() : selected;
+    if (isAutomatic(name)) { setError("Debt is calculated automatically. Edit your loans on the Debt page."); return; }
     const row = { name, amount: categoryAmount.trim() };
     const problem = validateBudgetSetup("0", [{ ...row, amount: baseMoneyDraft(row.amount) }]);
     if (problem) { setError(problem); return; }
@@ -63,7 +67,7 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel, o
       <View style={add.grid}>
         {categoryTiles.map(name => {
           const included = categories.some(row => row.name.toLowerCase() === name.toLowerCase());
-          return <Pressable key={name} disabled={busy} onPress={() => choose(name)} accessibilityRole="button" accessibilityLabel={name}
+          return <Pressable key={name} disabled={busy || isAutomatic(name)} onPress={() => choose(name)} accessibilityRole="button" accessibilityLabel={name}
             accessibilityState={{ selected: selected === name }} accessibilityHint={included ? "Edit this category amount" : "Set a monthly amount for this category"}
             style={[add.tile, selected === name && add.tileSelected]}>
             <CategoryIcon category={name} /><Text style={[add.tileLabel, selected === name && add.tileLabelSelected]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={.7}>{name}</Text>
@@ -83,9 +87,9 @@ export default function BudgetSetupForm({ data, apiBaseUrl, onSaved, onCancel, o
         <Text style={s.label}>Your budget categories</Text>
         {categories.map((row, i) => <View key={row.name} style={s.selectedCategoryRow}>
           <CategoryIcon category={row.name} />
-          <Pressable style={s.selectedCategoryDetails} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Text style={s.label}>{row.name}</Text><Text style={s.text}>{formatDraftMoney(Number(row.amount || 0))} / month</Text></Pressable>
-          <Pressable style={s.remove} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Pencil size={17} color={palette.textSecondary} /></Pressable>
-          <Pressable style={s.remove} accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={() => { setCategories(rows => rows.filter((_, index) => index !== i)); if (selected === row.name) setSelected(null); }}><Trash2 size={17} color={palette.danger} /></Pressable>
+          <Pressable disabled={isAutomatic(row.name)} style={s.selectedCategoryDetails} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Text style={s.label}>{row.name}</Text><Text style={s.text}>{formatDraftMoney(Number(row.amount || 0))} / month{isAutomatic(row.name) ? " · Automatic from your debts" : ""}</Text></Pressable>
+          {!isAutomatic(row.name) && <><Pressable style={s.remove} accessibilityRole="button" accessibilityLabel={`Edit ${row.name}`} onPress={() => choose(row.name)}><Pencil size={17} color={palette.textSecondary} /></Pressable>
+          <Pressable style={s.remove} accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={() => { setCategories(rows => rows.filter((_, index) => index !== i)); if (selected === row.name) setSelected(null); }}><Trash2 size={17} color={palette.danger} /></Pressable></>}
         </View>)}
       </View>}
       {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}

@@ -11,6 +11,7 @@ from app.database import get_db
 from app.dependencies import CurrentUser
 from app.models.income import MonthlyIncome
 from app.models.transaction import Transaction
+from app.services.debt_payments import monthly_cents
 
 router = APIRouter(prefix="/budget", tags=["Monthly budget"])
 
@@ -20,7 +21,9 @@ class IncomeInput(BaseModel):
     amount: Decimal = Field(ge=0, le=1000000000, max_digits=12, decimal_places=2, allow_inf_nan=False)
 
 
-def summary(db, user_id, year, month):
+def summary(db, user_id, year, month, *, include_debt=False):
+    from app.services.debt_schedule import sync
+    sync(db, user_id)
     sync_recurring(db, user_id)
     start = date(year, month, 1)
     end = date(year + (month == 12), month % 12 + 1, 1)
@@ -28,20 +31,28 @@ def summary(db, user_id, year, month):
     categories = {}
     for row in rows:
         categories[row.category] = categories.get(row.category, Decimal(0)) + Decimal(str(row.amount))
+    # Savings and spending-monitor callers account for debt separately. Only
+    # dashboard responses opt into the combined cash-outflow totals.
+    if include_debt:
+        debt_paid = Decimal(monthly_cents(db, user_id, year, month)) / 100
+        debt_categories = [key for key in categories if key.strip().casefold() == "debt"]
+        debt_total = debt_paid + sum((categories.pop(key) for key in debt_categories), Decimal(0))
+        if debt_total:
+            categories["Debt"] = debt_total
     spent = sum(categories.values(), Decimal(0)).quantize(Decimal("0.01"))
     income = db.query(MonthlyIncome).filter_by(user_id=user_id, year=year, month=month).first()
     amount = Decimal(income.amount_cents) / 100 if income else None
     return {"year": year, "month": month, "income": float(amount) if amount is not None else None,
             "spent": float(spent), "remaining": float(amount - spent) if amount is not None else None,
             "spent_percentage": float(spent / amount * 100) if amount else None,
-            "ideal_budget": ideal_budget(db, user_id, year, month, amount, categories),
+            "ideal_budget": ideal_budget(db, user_id, year, month, amount, categories, automatic_debt=include_debt),
             "category_spending": {key: float(value) for key, value in categories.items()},
             "category_percentages": {key: round(float(value / spent * 100), 2) for key, value in categories.items()} if spent else {}}
 
 
 @router.get("/monthly")
 def monthly(current_user: CurrentUser, year: int = Query(ge=1, le=9998), month: int = Query(ge=1, le=12), db: Session = Depends(get_db)):
-    return summary(db, current_user.id, year, month)
+    return summary(db, current_user.id, year, month, include_debt=True)
 
 
 @router.put("/income")
@@ -52,7 +63,7 @@ def save_income(body: IncomeInput, current_user: CurrentUser, year: int = Query(
         db.add(income)
     income.amount_cents = int(body.amount * 100)
     db.commit()
-    return summary(db, current_user.id, year, month)
+    return summary(db, current_user.id, year, month, include_debt=True)
 
 DEFAULT_PERCENTAGES = {"Rent": 30, "Food": 10, "Transport": 5, "Bills": 5, "Shopping": 10, "Entertainment": 10, "Subscriptions": 5, "Other": 5, "Savings / debt": 20}
 
@@ -66,7 +77,47 @@ class PlanInput(BaseModel):
             raise ValueError("Allocations must include all categories and total 100%")
 
 
-def ideal_budget(db, user_id, year, month, income, categories):
+def with_debt_budget(db, user_id, year, month, income, categories, budget):
+    # Derive the target from loans on every read; never create paid transactions
+    # or save a stale copy of the automatically managed category.
+    from app.models.debt import Debt
+    from app.routers.debts import estimate
+    debts = db.query(Debt).filter_by(user_id=user_id).all() if inspect(db.get_bind()).has_table("debts") else []
+    if not debts:
+        return budget
+    from app.models.debt_payment import DebtPayment
+    from sqlalchemy import func
+    from app.services.debt_schedule import totals
+    target = Decimal(0)
+    for debt in debts:
+        remaining, fixed = totals(db, debt)
+        # Keep this month's target after its payment is made, including payoff.
+        # Only payments from earlier months reduce the opening monthly balance.
+        baseline = debt.total_due_cents
+        if baseline is None:
+            baseline = round((Decimal(str(debt.balance)) + Decimal(str(estimate(debt.balance, debt.annual_rate, debt.remaining_months)[1]))) * 100)
+        earlier = db.query(func.coalesce(func.sum(DebtPayment.applied_cents), 0)).filter(
+            DebtPayment.user_id == user_id, DebtPayment.debt_id == debt.id,
+            DebtPayment.paid_on < date(year, month, 1)).scalar()
+        target += Decimal(min(fixed, max(0, baseline - earlier))) / 100
+    result = dict(budget or {"customized": False, "mode": "amounts", "allocations": []})
+    allocations = [dict(row) for row in result["allocations"] if row["category"].strip().casefold() != "debt"]
+    actual = sum((value for key, value in categories.items() if key.strip().casefold() == "debt"), Decimal(0))
+    allocations.append({"category": "Debt", "target": float(target), "spent": float(actual),
+                        "percentage": float(target / income * 100) if income else 0, "automatic": True})
+    result["allocations"] = allocations
+    result["unbudgeted"] = [row for row in result.get("unbudgeted", []) if row["category"].strip().casefold() != "debt"]
+    total = sum((Decimal(str(row["target"])) for row in allocations if row["target"] is not None), Decimal(0))
+    result.update(planned_total=float(total), planned_remaining=float(income - total) if income is not None else None)
+    return result
+
+
+def ideal_budget(db, user_id, year, month, income, categories, *, automatic_debt=True):
+    budget = saved_ideal_budget(db, user_id, year, month, income, categories)
+    return with_debt_budget(db, user_id, year, month, income, categories, budget) if automatic_debt else budget
+
+
+def saved_ideal_budget(db, user_id, year, month, income, categories):
     plan = db.query(BudgetPlan).filter_by(user_id=user_id, year=year, month=month).first() if inspect(db.get_bind()).has_table("budget_plans") else None
     if plan is None:
         return None
@@ -145,10 +196,13 @@ def setup(body: BudgetSetup, current_user: CurrentUser, year: int = Query(ge=1, 
         db.add(plan)
     # Keep the month's accepted AI adjustment history when the budget is edited
     history = json.loads(plan.percentages).get("adjustments") if plan.percentages else None
-    plan.percentages = json.dumps({"version": 2, "categories": [{"name": category.name, "amount": str(category.amount)} for category in body.categories],
+    from app.models.debt import Debt
+    automatic_debt = inspect(db.get_bind()).has_table("debts") and db.query(Debt).filter_by(user_id=current_user.id).first() is not None
+    plan.percentages = json.dumps({"version": 2, "categories": [{"name": category.name, "amount": str(category.amount)} for category in body.categories
+                                                             if not (automatic_debt and category.name.casefold() == "debt")],
                                    **({"adjustments": history} if history else {})})
     db.commit()
-    return summary(db, current_user.id, year, month)
+    return summary(db, current_user.id, year, month, include_debt=True)
 
 
 @router.put("/plan")
@@ -164,4 +218,4 @@ def save_plan(body: PlanInput, current_user: CurrentUser, year: int = Query(ge=1
         db.add(plan)
     plan.percentages = json.dumps(body.percentages)
     db.commit()
-    return summary(db, current_user.id, year, month)
+    return summary(db, current_user.id, year, month, include_debt=True)

@@ -7,7 +7,7 @@ import { useAppTheme } from "../theme/ThemeContext";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
 import { createIncomeStyles } from "../styles/IncomeStyles";
 
-export type BudgetAllocation = { category: string; percentage: number; target: number | null; spent: number };
+export type BudgetAllocation = { automatic?: boolean; category: string; percentage: number; target: number | null; spent: number };
 export type MonthlyBudget = { ideal_budget?: { customized: boolean; mode?: "amounts"; planned_total?: number; planned_remaining?: number | null; unbudgeted?: { category: string; spent: number }[]; allocations: BudgetAllocation[] } | null; year: number; month: number; income: number | null; spent: number; remaining: number | null; spent_percentage: number | null };
 type Props = { budget: MonthlyBudget | null; loading: boolean; apiBaseUrl: string; onSaved: (budget: MonthlyBudget) => void };
 export default function MonthlyIncomeCard({ budget, loading, apiBaseUrl, onSaved }: Props) {

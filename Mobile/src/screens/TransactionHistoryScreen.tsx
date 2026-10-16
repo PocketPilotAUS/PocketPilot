@@ -11,8 +11,10 @@ import TransactionFilters from "../components/transactions/TransactionFilters";
 import TransactionRow from "../components/transactions/TransactionRow";
 import { useTransactionsTheme } from "../components/transactions/useTransactionsTheme";
 import { apiFetch, SessionExpiredError } from "../services/apiClient";
+import { loadDebtPayments } from "../services/debtService";
 import { formatAED } from "../utils/dashboard";
 import {
+  debtPaymentTransactions,
   DEFAULT_FILTERS,
   Filters,
   Transaction,
@@ -28,9 +30,10 @@ type Props = {
   refreshKey?: number;
   onAddExpense?: () => void;
   onImportStatement?: () => void;
+  onOpenDebt?: () => void;
 };
 
-export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onImportStatement, refreshKey = 0 }: Props) {
+export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onImportStatement, onOpenDebt, refreshKey = 0 }: Props) {
   const { styles, tx, palette, mode } = useTransactionsTheme();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -58,14 +61,16 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onI
 
       try {
         // Returns only the logged-in user's transactions
-        const response = await apiFetch(apiBaseUrl, "/transactions/");
+        const [response, payments] = await Promise.all([
+          apiFetch(apiBaseUrl, "/transactions/"), loadDebtPayments(apiBaseUrl),
+        ]);
 
         if (!response.ok) throw new Error("Failed to fetch transactions");
 
         const data: Transaction[] = await response.json();
 
         if (active) {
-          setTransactions(data);
+          setTransactions([...data, ...debtPaymentTransactions(payments)]);
           setLoaded(true);
         }
       } catch (err) {
@@ -114,7 +119,7 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onI
     setDeletingId(transaction.id);
 
     try {
-      const response = await apiFetch(apiBaseUrl, `/transactions/${transaction.id}`, {
+      const response = await apiFetch(apiBaseUrl, transaction.debt_payment_id != null ? `/debts/payments/${transaction.debt_payment_id}` : `/transactions/${transaction.id}`, {
         method: "DELETE",
       });
 
@@ -126,6 +131,7 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onI
 
       setTransactions((current) => current.filter((item) => item.id !== transaction.id));
       setSelected(null);
+      setReload(value => value + 1);
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
 
@@ -324,7 +330,7 @@ export default function TransactionHistoryScreen({ apiBaseUrl, onAddExpense, onI
 
         {/* Recurring expense schedules (unchanged feature) */}
         <View style={tx.recurringSection}>
-          <RecurringExpenses key={refreshKey} apiBaseUrl={apiBaseUrl} onChanged={() => setReload((value) => value + 1)} />
+          <RecurringExpenses key={`${refreshKey}:${reload}`} apiBaseUrl={apiBaseUrl} onOpenDebt={onOpenDebt} onChanged={() => setReload((value) => value + 1)} />
         </View>
       </KeyboardFormScrollView>
 
