@@ -9,4 +9,11 @@ export const createHomeSectionsStyles = (p: DashboardPalette) => StyleSheet.crea
   title: { color: p.text, fontSize: 18, fontWeight: "700" },
   subtitle: { color: p.textSecondary, fontSize: 12, lineHeight: 18 },
   pressed: { opacity: .75 },
+  alert: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 18, backgroundColor: p.card, paddingHorizontal: 14, paddingVertical: 12, marginTop: 14 },
+  alertPressed: { opacity: .75 },
+  alertWarn: { borderWidth: 1.5, backgroundColor: "rgba(242,140,40,0.12)" },
+  alertDanger: { borderWidth: 1.5, backgroundColor: p.dangerSoft },
+  alertBody: { flex: 1, gap: 2 },
+  alertTitle: { color: p.text, fontSize: 14, fontWeight: "700" },
+  alertText: { color: p.textSecondary, fontSize: 12, lineHeight: 17 },
 });

@@ -1,13 +1,9 @@
-from datetime import timedelta
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 
-from app.core.config import get_access_token_expire_minutes
 from app.core.security import (
-    create_access_token,
     hash_password,
     simulate_password_check,
     verify_and_update_password,
@@ -17,7 +13,8 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.account_settings import AccountSettings, get_account_settings
-from app.schemas.user import Token, UserCreate, UserLogin, UserResponse, ProfileUpdate, PasswordChange
+from app.services.refresh_sessions import start_session, rotate, revoke
+from app.schemas.user import RefreshRequest, Token, UserCreate, UserLogin, UserResponse, ProfileUpdate, PasswordChange
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -66,7 +63,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(credentials: UserLogin, db: Session = Depends(get_db)):
+def login(credentials: UserLogin, response: Response, db: Session = Depends(get_db)):
     user = get_user_by_email(db, credentials.email)
 
     if user is None:
@@ -90,13 +87,23 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
         user.hashed_password = updated_hash
         db.commit()
 
-    expires_delta = timedelta(minutes=get_access_token_expire_minutes())
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return start_session(db, user)
 
-    settings = get_account_settings(db, user.id)
-    return Token(
-        access_token=create_access_token(user.id, expires_delta, token_version=settings.token_version if settings else 0),
-        expires_in=int(expires_delta.total_seconds())
-    )
+
+@router.post("/refresh", response_model=Token)
+def refresh(body: RefreshRequest, response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return rotate(db, body.refresh_token)
+
+
+@router.post("/logout", status_code=204)
+def logout(body: RefreshRequest, db: Session = Depends(get_db)):
+    # Works even after the access token expires; revokes this device's family.
+    revoke(db, body.refresh_token)
+
 
 
 @router.get("/me", response_model=UserResponse)

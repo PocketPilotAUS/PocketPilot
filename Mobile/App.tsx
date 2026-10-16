@@ -25,8 +25,9 @@ import CurrencyNotice from "./src/components/CurrencyNotice";
 import AmbientBackground from "./src/components/AmbientBackground";
 import AnimatedWelcome from "./src/components/AnimatedWelcome";
 import FinancialOverview from "./src/components/dashboard/FinancialOverview";
-import BudgetTracker from "./src/components/dashboard/BudgetTracker";
+import BudgetTrackerScreen from "./src/screens/BudgetTrackerScreen";
 import HomeSections from "./src/components/dashboard/HomeSections";
+import SpendingAlert from "./src/components/dashboard/SpendingAlert";
 import SpendingScreen from "./src/screens/SpendingScreen";
 import DebtScreen from "./src/screens/DebtScreen";
 import SavingsScreen from "./src/screens/SavingsScreen";
@@ -53,6 +54,7 @@ function PocketPilotApp() {
     | "login"
     | "register"
     | "dashboard"
+    | "budgetTracker"
     | "spending"
     | "debt"
     | "savings"
@@ -64,9 +66,10 @@ function PocketPilotApp() {
     | "settings";
 
   const [reviewProfile, setReviewProfile] = useState<PlanningProfile | undefined>();
+  // Plan to open directly in My Financial Plans (from a savings goal)
+  const [focusPlanId, setFocusPlanId] = useState<string | undefined>();
   const [screen, setScreen] = useState<Screen>("welcome");
-  const [startAddingTransaction, setStartAddingTransaction] = useState(false);
-  const openAddTransaction = () => { setStartAddingTransaction(true); setScreen("history"); };
+  const [spendingRevision, setSpendingRevision] = useState(0);
   const screenRef = useRef<Screen>(screen);
   const settingsReturn = useRef<Screen>("dashboard");
   const openSettings = () => { settingsReturn.current = screen; setScreen("settings"); };
@@ -88,7 +91,7 @@ function PocketPilotApp() {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await logout(API_BASE_URL);
       chatSession.reset();
       setReviewProfile(undefined);
       setCurrentUser(null);
@@ -134,7 +137,7 @@ function PocketPilotApp() {
   useEffect(() => {
     // Called when any request is rejected with 401 (expired or invalid token)
     setSessionExpiredHandler(() => {
-      const signedInScreens: Screen[] = ["dashboard", "spending", "debt", "savings", "history", "aiInsights", "aiChat", "chatBudgetSetup", "financialPlans", "settings"];
+      const signedInScreens: Screen[] = ["dashboard", "budgetTracker", "spending", "debt", "savings", "history", "aiInsights", "aiChat", "chatBudgetSetup", "financialPlans", "settings"];
 
       // Ignore late responses once the user is already signed out
       if (!signedInScreens.includes(screenRef.current)) return;
@@ -157,7 +160,7 @@ function PocketPilotApp() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "dashboard" && screen !== "spending") return;
+    if (screen !== "dashboard" && screen !== "spending" && screen !== "budgetTracker") return;
 
     // Set when the user leaves the dashboard (e.g. logs out), so a late
     // response can never show one user's totals to the next user
@@ -194,13 +197,13 @@ function PocketPilotApp() {
     return () => {
       cancelled = true;
     };
-  }, [screen]);
+  }, [screen, spendingRevision]);
 
   const withNavigation = (content: React.ReactNode) => (
     <View style={styles.container}>
       <View style={styles.container}>{content}</View>
       <CurrencyNotice />
-      <BottomNavigation active={screen === "spending" || screen === "debt" || screen === "savings" ? "dashboard" : screen as AppTab} onSelect={tab => { setStartAddingTransaction(false); if (tab === "financialPlans" && screen !== tab) setReviewProfile(undefined); setScreen(tab); }} />
+      <BottomNavigation active={screen === "budgetTracker" || screen === "spending" || screen === "debt" || screen === "savings" ? "dashboard" : screen as AppTab} onSelect={tab => { if (tab === "financialPlans" && screen !== tab) { setReviewProfile(undefined); setFocusPlanId(undefined); } setScreen(tab); }} />
     </View>
   );
   if (checkingSession || !preferencesReady) {
@@ -240,7 +243,7 @@ function PocketPilotApp() {
 
   if (screen === "settings") {
     return <SettingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen(settingsReturn.current)} onUpdated={setCurrentUser} onLogout={handleLogout} onPasswordChanged={async () => {
-      await logout(); chatSession.reset(); setReviewProfile(undefined); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
+      await logout(API_BASE_URL); chatSession.reset(); setReviewProfile(undefined); setFocusPlanId(undefined); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
     }} />;
   }
 
@@ -252,13 +255,14 @@ function PocketPilotApp() {
   }
 
   if (screen === "aiChat") {
-    return withNavigation(<AIChatScreen onSetupBudget={() => setScreen("chatBudgetSetup")} apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setScreen("financialPlans"); }} session={chatSession} />);
+    return withNavigation(<AIChatScreen onSetupBudget={() => setScreen("chatBudgetSetup")} apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setFocusPlanId(undefined); setScreen("financialPlans"); }} session={chatSession} />);
   }
 
   if (screen === "financialPlans") {
     return withNavigation(<FinancialPlansScreen
       apiBaseUrl={API_BASE_URL}
       initialProfile={reviewProfile}
+      focusPlanId={focusPlanId}
       onPreview={chatSession.addPlanPreview}
       onStartPlanning={() => { chatSession.setDraft("Help me plan how to save for a goal by a specific date."); setScreen("aiChat"); }}
     />);
@@ -271,10 +275,37 @@ function PocketPilotApp() {
   if (screen === "history") {
     return withNavigation(
       <TransactionsScreen
+        onOpenDebt={() => setScreen("debt")}
         apiBaseUrl={API_BASE_URL}
         budgetCategories={spending?.ideal_budget?.allocations.map(row => row.category)}
-        initiallyAdding={startAddingTransaction}
       />
+    );
+  }
+
+  if (screen === "budgetTracker") {
+    return withNavigation(
+        <BudgetTrackerScreen
+          loading={loading}
+          error={error}
+          onBack={() => setScreen("dashboard")}
+          data={spending}
+          apiBaseUrl={API_BASE_URL}
+          onSaved={setSpending}
+          aiBusy={chatSession.busy}
+          onReview={() => {
+            if (!spending?.ideal_budget || chatSession.busy) return;
+
+            setScreen("aiChat");
+
+            void chatSession.send(
+              "Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.",
+              {
+                year: spending.year,
+                month: spending.month,
+              }
+            );
+          }}
+        />
     );
   }
 
@@ -285,7 +316,8 @@ function PocketPilotApp() {
         loading={loading}
         error={error}
         onBack={() => setScreen("dashboard")}
-        onAddExpense={openAddTransaction}
+        apiBaseUrl={API_BASE_URL}
+        onExpenseSaved={() => setSpendingRevision(value => value + 1)}
       />
     );
   }
@@ -295,7 +327,8 @@ function PocketPilotApp() {
   }
 
   if (screen === "savings") {
-    return withNavigation(<SavingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} />);
+    return withNavigation(<SavingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")}
+      onOpenPlan={planId => { setReviewProfile(undefined); setFocusPlanId(planId); setScreen("financialPlans"); }} />);
   }
 
   if (screen === "welcome") {
@@ -346,27 +379,10 @@ function PocketPilotApp() {
           onSaved={setSpending}
         />
 
-        <BudgetTracker
-          data={spending}
-          apiBaseUrl={API_BASE_URL}
-          onSaved={setSpending}
-          aiBusy={chatSession.busy}
-          onReview={() => {
-            if (!spending?.ideal_budget || chatSession.busy) return;
-
-            setScreen("aiChat");
-
-            void chatSession.send(
-              "Review my saved monthly budget. Check my income, category targets, recorded spending, affordability and missing costs. Suggest adjustments for me to approve; do not save or record anything.",
-              {
-                year: spending.year,
-                month: spending.month,
-              }
-            );
-          }}
-        />
+        <SpendingAlert apiBaseUrl={API_BASE_URL} refreshKey={spending} onOpen={() => { setReviewProfile(undefined); setFocusPlanId(undefined); setScreen("financialPlans"); }} />
 
         <HomeSections
+          onOpenBudget={() => setScreen("budgetTracker")}
           onOpenSpending={() => setScreen("spending")}
           onOpenDebt={() => setScreen("debt")}
           onOpenSavings={() => setScreen("savings")}

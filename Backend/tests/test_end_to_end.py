@@ -9,6 +9,7 @@ from app.database import Base, get_db
 from app.main import app
 from conftest import auth_headers
 from migrate_add_users import migrate
+from migrate_refresh_sessions import migrate as migrate_refresh_sessions
 from test_migration import LEGACY_ROWS, legacy_rows, make_legacy_db
 
 
@@ -18,6 +19,7 @@ def migrated_client(tmp_path, jwt_secret):
     # then served by the real application
     path = make_legacy_db(tmp_path / "pocketpilot.db")
     migrate(path)
+    migrate_refresh_sessions(path)
 
     engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
     session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)

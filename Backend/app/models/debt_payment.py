@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, String, UniqueConstraint
 from app.database import Base
 
 
@@ -13,3 +13,6 @@ class DebtPayment(Base):
     amount_cents = Column(Integer, nullable=False)
     paid_on = Column(Date, nullable=False, index=True)
     request_key = Column(String(36), nullable=False)
+
+    applied_cents = Column(Integer, nullable=False, default=0, server_default="0")
+    automatic = Column(Boolean, nullable=False, default=False, server_default="0")

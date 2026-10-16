@@ -3,6 +3,7 @@ import React from "react";
 import { Pressable } from "react-native";
 import { Text, View } from "../../preferences/LocalizedNative";
 import {
+  ChartPie,
   ChevronRight,
   CreditCard,
   PiggyBank,
@@ -12,12 +13,14 @@ import { useDashboardTheme } from "./useDashboardTheme";
 import { createHomeSectionsStyles } from "../../styles/HomeSectionsStyles";
 
 type Props = {
+  onOpenBudget: () => void;
   onOpenSpending: () => void;
   onOpenDebt: () => void;
   onOpenSavings: () => void;
 };
 
 export default function HomeSections({
+  onOpenBudget,
   onOpenSpending,
   onOpenDebt,
   onOpenSavings,
@@ -26,6 +29,13 @@ export default function HomeSections({
   const s = createHomeSectionsStyles(palette);
 
   const sections = [
+    {
+      title: "Budget Tracker",
+      Icon: ChartPie,
+      onPress: onOpenBudget,
+      subtitle: "Monthly budget and category targets",
+      hint: "Open your budget tracker",
+    },
     {
       title: "Debt",
       Icon: CreditCard,

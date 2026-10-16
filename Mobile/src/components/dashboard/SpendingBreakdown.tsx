@@ -10,6 +10,7 @@ import { useDashboardTheme } from "./useDashboardTheme";
 import {
   DashboardData,
   buildSlices,
+  buildBudgetRows,
   formatAED,
   formatPercent,
   monthName,
@@ -30,6 +31,12 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
   const slices = chart.slices;
   const total = chart.total;
   const month = data ? monthName(data.month) : "";
+  // Planned budget amounts are targets, never payments: only recorded
+  // expenses count as spending
+  const budget = data?.ideal_budget ?? null;
+  const plannedRows = budget ? buildBudgetRows(budget.allocations, budget.mode === "amounts") : [];
+  const plannedTotal = budget ? budget.allocations.reduce((sum, row) => sum + (row.target ?? 0), 0) : 0;
+  const recordedTotal = data?.spent ?? 0;
 
   return (
     <View style={styles.card}>
@@ -53,10 +60,11 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
             </View>
           </View>
 
-          <Text style={styles.emptyTitle}>No expenses yet{month ? ` for ${month}` : ""}</Text>
+          <Text style={styles.emptyTitle}>No expenses recorded yet{month ? ` for ${month}` : ""}</Text>
           <Text style={styles.emptyText}>
             {chart.validIncome ? `${formatAED(chart.remaining!)} of your income is unspent. Grey represents the remaining income.` : "Add your monthly income to see spending as a share of it."}
           </Text>
+          {budget && <Text style={styles.emptyText}>Your budget plans {formatAED(plannedTotal)} for this month. Planned amounts are not payments; add expenses as you pay them.</Text>}
 
         </View>
       ) : (
@@ -100,6 +108,26 @@ export default function SpendingBreakdown({ data, loading, onAddExpense }: Props
           {chart.overBy > 0 && <Text style={styles.chartDeficit}>{formatAED(chart.overBy)} over income. The full red ring means all income has been used; category percentages show the actual overage.</Text>}
         </>
       )}
+      {budget && plannedRows.length > 0 && <View style={styles.budgetList}>
+        <View style={styles.cardTitleBlock}>
+          <Text style={styles.cardLabel}>Planned vs recorded</Text>
+          <Text style={styles.cardSubtitle}>{formatAED(recordedTotal)} recorded of {formatAED(plannedTotal)} planned{month ? ` · ${month}` : ""}</Text>
+        </View>
+        {plannedRows.map(row => {
+          const ratio = row.ratio ?? 0;
+          const percent = Math.min(100, Number.isFinite(ratio) ? ratio * 100 : 100);
+          return <View key={row.category}>
+            <View style={styles.budgetHeaderRow}>
+              <Text style={styles.budgetName}>{row.category}</Text>
+              <Text style={styles.budgetFigures}><Text style={[styles.budgetFiguresStrong, row.over && styles.statusDanger]}>{formatAED(row.spent)}</Text>{row.target != null ? ` / ${formatAED(row.target)} planned` : ""}</Text>
+            </View>
+            {row.target != null && <View style={styles.budgetTrack} accessibilityRole="progressbar" accessibilityLabel={`${row.category} recorded against plan`} accessibilityValue={{ min: 0, max: 100, now: Math.round(percent), text: `${formatAED(row.spent)} / ${formatAED(row.target)}` }}>
+              <View style={[styles.budgetFill, row.over ? styles.budgetFillDanger : ratio >= .8 ? styles.budgetFillWarning : null, { width: `${percent}%` }]} />
+            </View>}
+          </View>;
+        })}
+        <Text style={styles.mutedText}>Recorded amounts come only from expenses you add. Savings are tracked separately.</Text>
+      </View>}
       <Pressable
         onPress={onAddExpense}
         style={({ pressed }) => [

@@ -86,3 +86,91 @@ def test_auth_and_missing_storage(api_client, db_session):
     db_session.commit()
     assert api_client.get('/debts/payments', headers=auth).status_code == 503
     assert api_client.get('/savings?year=2020&month=1', headers=auth).status_code == 503
+
+
+def test_dashboard_groups_debt_without_changing_savings(api_client, db_session):
+    auth, debt = setup(api_client, db_session)
+    second = api_client.post('/debts', headers=auth, json={
+        'name': 'Second loan', 'balance': 5000, 'annual_rate': 0, 'remaining_months': 12,
+    }).json()
+    db_session.add(Transaction(user_id=1, amount=2000, category='Rent', date=date(2020, 1, 5)))
+    db_session.commit()
+    first_payment = payment(api_client, auth, debt, amount=3000).json()
+    payment(api_client, auth, second, amount=1600)
+    payment(api_client, auth, debt, amount=900, paid_on='2020-02-01')
+
+    def dashboard():
+        response = api_client.get('/budget/monthly?year=2020&month=1', headers=auth)
+        assert response.status_code == 200
+        return response.json()
+
+    data = dashboard()
+    assert data['category_spending'] == {'Food': 1000, 'Rent': 2000, 'Debt': 4600}
+    assert data['spent'] == 7600
+    assert data['remaining'] == 2400
+    assert data['spent_percentage'] == 76
+    savings = api_client.get('/savings?year=2020&month=1', headers=auth).json()
+    assert savings['spent'] == 3000 and savings['debt_payments'] == 4600
+    confirmed = api_client.put('/savings/confirm', headers=auth, json={
+        'year': 2020, 'month': 1, 'expected_income': 10000,
+        'expected_spent': 3000, 'expected_debt_payments': 4600,
+    })
+    assert confirmed.status_code == 200
+    assert confirmed.json()['saved'] == 2400
+    # Changing income must return the same combined summary.
+    updated = api_client.put('/budget/income?year=2020&month=1', headers=auth, json={'amount': 10000})
+    assert updated.json()['spent'] == 7600
+    api_client.delete(f"/debts/payments/{first_payment['id']}", headers=auth)
+    assert dashboard()['category_spending']['Debt'] == 1600
+    assert dashboard()['remaining'] == 5400
+
+    register_user(api_client, email='other@example.com')
+    other = auth_headers(login_user(api_client, email='other@example.com').json()['access_token'])
+    other_data = api_client.get('/budget/monthly?year=2020&month=1', headers=other).json()
+    assert other_data['spent'] == 0 and other_data['category_spending'] == {}
+
+
+def test_automatic_debt_budget_tracks_loans_and_keeps_payments_separate(api_client, db_session):
+    auth, debt = setup(api_client, db_session)
+    from app.routers.debts import estimate
+    expected = estimate(10000, 5, 24)[0]
+
+    def budget():
+        response = api_client.get('/budget/monthly?year=2020&month=1', headers=auth)
+        assert response.status_code == 200
+        return response.json()
+
+    def debt_row():
+        rows = [row for row in budget()['ideal_budget']['allocations'] if row['category'] == 'Debt']
+        assert len(rows) == 1
+        return rows[0]
+
+    assert debt_row()['target'] == expected
+    assert debt_row()['spent'] == 0 and debt_row()['automatic'] is True
+    assert budget()['spent'] == 1000  # A planned instalment is not a payment.
+    second = api_client.post('/debts', headers=auth, json={
+        'name': 'Second loan', 'balance': 1200, 'annual_rate': 0, 'remaining_months': 12,
+    }).json()
+    assert debt_row()['target'] == round(expected + 100, 2)
+    response = api_client.put('/budget/setup?year=2020&month=1', headers=auth, json={
+        'income': 10000, 'categories': [{'name': 'Food', 'amount': 2000}, {'name': 'debt', 'amount': 1}],
+    })
+    assert response.status_code == 200
+    assert debt_row()['target'] == round(expected + 100, 2)
+    assert budget()['ideal_budget']['planned_total'] == round(2000 + expected + 100, 2)
+    payment(api_client, auth, debt, amount=200)
+    payment(api_client, auth, second, amount=100)
+    assert debt_row()['spent'] == 300
+    assert budget()['spent'] == 1300
+    edited = api_client.put(f"/debts/{debt['id']}", headers=auth, json={
+        'name': 'Loan', 'balance': 2400, 'annual_rate': 0, 'remaining_months': 12,
+    })
+    assert edited.status_code == 200
+    assert debt_row()['target'] == 300
+    api_client.delete(f"/debts/{second['id']}", headers=auth)
+    assert debt_row()['target'] == 200 and debt_row()['spent'] == 300
+    api_client.delete(f"/debts/{debt['id']}", headers=auth)
+    result = budget()
+    assert all(row['category'] != 'Debt' for row in result['ideal_budget']['allocations'])
+    assert result['category_spending']['Debt'] == 300  # Paid history survives loan deletion.
+    assert result['ideal_budget']['planned_total'] == 2000

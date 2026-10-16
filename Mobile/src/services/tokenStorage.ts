@@ -1,39 +1,65 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
-const TOKEN_KEY = "pocketpilot_access_token";
-
-// SecureStore (iOS Keychain / Android Keystore) is not available on web.
-// There the token is kept in memory only, never in localStorage, so the
-// user signs in again after reloading the page.
+const TOKEN_KEY = "pocketpilot_access_token"; // Legacy access-only storage
+const SESSION_KEY = "pocketpilot_session_v2";
 const useSecureStore = Platform.OS !== "web";
-let memoryToken: string | null = null;
+export type TokenPair = { access_token: string; refresh_token: string };
+let memorySession: TokenPair | null = null;
+let generation = 0;
+let writes: Promise<void> = Promise.resolve();
+export const sessionGeneration = () => generation;
 
-export async function saveToken(token: string): Promise<void> {
-  if (!useSecureStore) {
-    memoryToken = token;
-    return;
+function serialize<T>(operation: () => Promise<T>): Promise<T> {
+  const result = writes.then(operation);
+  writes = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+export async function getSession(): Promise<TokenPair | null> {
+  await writes;
+  if (!useSecureStore) return memorySession;
+  const saved = await SecureStore.getItemAsync(SESSION_KEY);
+  if (saved) {
+    const pair = JSON.parse(saved) as TokenPair;
+    if (typeof pair.access_token === "string" && typeof pair.refresh_token === "string") return pair;
+    throw new Error("Invalid saved session");
   }
-
-  await SecureStore.setItemAsync(TOKEN_KEY, token, {
-    // Excluded from device backups, so a copied token cannot be
-    // restored onto another phone
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-  });
+  const legacy = await SecureStore.getItemAsync(TOKEN_KEY);
+  return legacy ? { access_token: legacy, refresh_token: "" } : null;
 }
 
 export async function getToken(): Promise<string | null> {
-  if (!useSecureStore) {
-    return memoryToken;
-  }
-
-  return SecureStore.getItemAsync(TOKEN_KEY);
+  return (await getSession())?.access_token ?? null;
 }
 
-export async function clearToken(): Promise<void> {
-  memoryToken = null;
+// Store the pair in ONE SecureStore value so rotation cannot leave a mixed pair.
+// expectedGeneration prevents a late refresh from undoing logout/new login.
+export function saveSession(pair: TokenPair, expectedGeneration?: number): Promise<boolean> {
+  if (expectedGeneration === undefined) generation += 1;
+  const expected = expectedGeneration ?? generation;
+  return serialize(async () => {
+    if (expected !== generation) return false;
+    if (useSecureStore) {
+      await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(pair), {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    } else {
+      // Web stays memory-only; never persist a long-lived token in localStorage.
+      memorySession = pair;
+    }
+    return expected === generation;
+  });
+}
 
-  if (useSecureStore) {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-  }
+export function clearToken(): Promise<void> {
+  generation += 1;
+  return serialize(async () => {
+    memorySession = null;
+    if (useSecureStore) {
+      await SecureStore.deleteItemAsync(SESSION_KEY);
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    }
+  });
 }

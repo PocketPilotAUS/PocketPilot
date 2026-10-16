@@ -4,17 +4,20 @@ import { Text, TextInput, View } from "../../preferences/LocalizedNative";
 import { useDashboardTheme } from "../dashboard/useDashboardTheme";
 import { amountDraft, toAED, currencyCode } from "../../preferences/currency";
 import { apiFetch } from "../../services/apiClient";
-import type { FinancialPlan } from "../../types/plans";
+import type { FinancialPlan, PlanSuggestion } from "../../types/plans";
 
-type Props = { plan: FinancialPlan; apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onCancel: () => void; onBusyChange: (busy: boolean) => void };
-export default function BudgetPlanEditor({ plan, apiBaseUrl, onPreview, onCancel, onBusyChange }: Props) {
+// suggestion: optional values from a recovery option, prefilled for the user to review
+type Props = { plan: FinancialPlan; apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onCancel: () => void; onBusyChange: (busy: boolean) => void; suggestion?: PlanSuggestion };
+export default function BudgetPlanEditor({ plan, apiBaseUrl, onPreview, onCancel, onBusyChange, suggestion }: Props) {
   const { styles: s, palette } = useDashboardTheme();
   const [goal, setGoal] = useState(plan.title);
   const [target, setTarget] = useState(amountDraft(plan.targetAmount));
-  const [progress, setProgress] = useState(amountDraft(plan.savedAmount));
-  const [monthly, setMonthly] = useState(amountDraft(plan.monthlyContribution));
-  const [deadline, setDeadline] = useState(plan.deadline ?? "");
-  const [byDeadline, setByDeadline] = useState(plan.profile.monthly_contribution == null);
+  // The starting amount the user entered; savings assigned in Savings are added by the server
+  const entered = plan.enteredSavedAmount ?? plan.savedAmount;
+  const [progress, setProgress] = useState(amountDraft(entered));
+  const [monthly, setMonthly] = useState(amountDraft(suggestion?.monthly ?? plan.monthlyContribution));
+  const [deadline, setDeadline] = useState(suggestion?.deadline ?? plan.deadline ?? "");
+  const [byDeadline, setByDeadline] = useState(suggestion?.monthly != null ? false : suggestion?.deadline != null ? true : plan.profile.monthly_contribution == null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const locked = useRef(false);
@@ -22,7 +25,7 @@ export default function BudgetPlanEditor({ plan, apiBaseUrl, onPreview, onCancel
     if (locked.current) return;
     const validMoney = (value: string) => /^\d+(?:\.\d{1,2})?$/.test(value);
     if (!goal.trim() || !validMoney(target) || !validMoney(progress) || (!byDeadline && !validMoney(monthly))) { setError("Enter a goal and valid amounts."); return; }
-    const profile = { ...plan.profile, goal: goal.trim(), target_amount: toAED(target, plan.targetAmount), current_amount: toAED(progress, plan.savedAmount), monthly_contribution: byDeadline ? null : toAED(monthly, plan.monthlyContribution), deadline: byDeadline ? deadline : plan.deadline };
+    const profile = { ...plan.profile, goal: goal.trim(), target_amount: toAED(target, plan.targetAmount), current_amount: toAED(progress, entered), monthly_contribution: byDeadline ? null : toAED(monthly, plan.monthlyContribution), deadline: byDeadline ? deadline : plan.deadline };
     locked.current = true; setBusy(true); onBusyChange(true); setError("");
     try {
       const response = await apiFetch(apiBaseUrl, "/planning/budget-plans/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile, choices: plan.budgetChoices ?? {}, budget_fingerprint: plan.budgetFingerprint, request_key: plan.confirmationKey }) });

@@ -8,6 +8,7 @@ import type { FinancialPlan, PlanningProfile } from "../types/plans";
 type Props = {
   apiBaseUrl: string;
   initialProfile?: PlanningProfile;
+  focusPlanId?: string;
   onPreview: (plan: FinancialPlan) => void;
   onStartPlanning: () => void;
 };

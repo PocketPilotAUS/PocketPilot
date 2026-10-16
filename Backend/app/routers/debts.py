@@ -7,7 +7,7 @@ from app.services.debt_payments import ready as payments_ready
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,19 @@ class DebtInput(BaseModel):
     remaining_months: int = Field(ge=1, le=600, strict=True)
     original_principal: Decimal | None = Field(default=None, gt=0, le=1_000_000_000, max_digits=12, decimal_places=2, allow_inf_nan=False)
 
+    automatic_day: int | None = Field(default=None, ge=1, le=31, strict=True)
+    next_due: date | None = None
+
+    @model_validator(mode="after")
+    def schedule_pair(self):
+        if (self.automatic_day is None) != (self.next_due is None):
+            raise ValueError("Choose a payment day and first payment date together.")
+        if self.next_due is not None:
+            from calendar import monthrange
+            if self.next_due.day != min(self.automatic_day, monthrange(self.next_due.year, self.next_due.month)[1]):
+                raise ValueError("First payment date must match the selected payment day.")
+        return self
+
     @field_validator("name")
     @classmethod
     def printable_name(cls, value):
@@ -40,17 +53,23 @@ def estimate(balance, annual_rate, months):
     return round(payment, 2), round(max(0, payment * months - principal), 2)
 
 
-def serialize(debt):
+def serialize(debt, db=None):
     payment, interest = estimate(debt.balance, debt.annual_rate, debt.remaining_months)
-    return {"id": debt.id, "name": debt.name, "balance": float(debt.balance),
+    from app.services.debt_schedule import totals
+    remaining, fixed = totals(db, debt) if db is not None else (round((float(debt.balance) + interest) * 100), round(payment * 100))
+    return {"total_left_to_pay": remaining / 100, "automatic_day": debt.automatic_day,
+            "next_due": debt.next_due.isoformat() if debt.next_due else None, "id": debt.id, "name": debt.name, "balance": float(debt.balance),
             "annual_rate": float(debt.annual_rate), "remaining_months": debt.remaining_months,
             "original_principal": float(debt.original_principal) if debt.original_principal is not None else None,
-            "estimated_monthly_payment": payment, "estimated_remaining_interest": interest}
+            "estimated_monthly_payment": min(fixed, remaining) / 100, "estimated_remaining_interest": interest}
 
 
 def ready(db):
     if not inspect(db.get_bind()).has_table("debts"):
         raise HTTPException(503, "Debt storage is not ready. Run Backend/migrate_debts.py and restart the backend.")
+
+    if "total_due_cents" not in {c["name"] for c in inspect(db.get_bind()).get_columns("debts")}:
+        raise HTTPException(503, "Run Backend/migrate_automatic_debts.py and restart the backend.")
 
 
 def owned(db, user_id, debt_id):
@@ -76,13 +95,15 @@ class PaymentInput(BaseModel):
 
 
 def payment_record(row):
-    return {"id": row.id, "debt_id": row.debt_id, "debt_name": row.debt_name,
+    return {"automatic": row.automatic, "id": row.id, "debt_id": row.debt_id, "debt_name": row.debt_name,
             "amount": row.amount_cents / 100, "paid_on": row.paid_on.isoformat()}
 
 
 @router.get("/payments")
 def list_payments(current_user: CurrentUser, db: Session = Depends(get_db)):
     payments_ready(db)
+    from app.services.debt_schedule import sync
+    sync(db, current_user.id)
     return [payment_record(row) for row in db.query(DebtPayment).filter_by(user_id=current_user.id)
             .order_by(DebtPayment.paid_on.desc(), DebtPayment.id.desc()).all()]
 
@@ -100,8 +121,14 @@ def add_payment(debt_id: int, body: PaymentInput, current_user: CurrentUser, db:
     if previous:
         return retry(previous)
     debt = owned(db, user_id, debt_id)
+    start = body.paid_on.replace(day=1)
+    from app.routers.recurring import next_month
+    if db.query(DebtPayment).filter(DebtPayment.user_id == user_id, DebtPayment.debt_id == debt_id,
+        DebtPayment.automatic.is_(True), DebtPayment.paid_on >= start,
+        DebtPayment.paid_on < next_month(start, 1)).first():
+        raise HTTPException(409, "An automatic payment is already recorded for this month. Remove it before recording a replacement.")
     row = DebtPayment(user_id=user_id, debt_id=debt.id, debt_name=debt.name,
-                      amount_cents=amount, paid_on=body.paid_on, request_key=key)
+                      amount_cents=amount, applied_cents=amount, paid_on=body.paid_on, request_key=key)
     db.add(row)
     try:
         db.commit()
@@ -128,27 +155,46 @@ def remove_payment(payment_id: int, current_user: CurrentUser, db: Session = Dep
 @router.get("")
 def list_debts(current_user: CurrentUser, db: Session = Depends(get_db)):
     ready(db)
-    return [serialize(row) for row in db.query(Debt).filter(Debt.user_id == current_user.id).order_by(Debt.id).all()]
+    from app.services.debt_schedule import sync
+    sync(db, current_user.id)
+    return [serialize(row, db) for row in db.query(Debt).filter(Debt.user_id == current_user.id).order_by(Debt.id).all()]
 
 
 @router.post("", status_code=201)
 def add_debt(body: DebtInput, current_user: CurrentUser, db: Session = Depends(get_db)):
     ready(db)
     debt = Debt(user_id=current_user.id, **body.model_dump())
+    from app.services.debt_schedule import initialize, today_local
+    if body.next_due and body.next_due < today_local():
+        raise HTTPException(422, "First automatic payment must be today or later.")
+    initialize(debt)
     db.add(debt)
     db.commit()
     db.refresh(debt)
-    return serialize(debt)
+    from app.services.debt_schedule import sync
+    sync(db, current_user.id)
+    return serialize(debt, db)
 
 
 @router.put("/{debt_id}")
 def update_debt(debt_id: int, body: DebtInput, current_user: CurrentUser, db: Session = Depends(get_db)):
     debt = owned(db, current_user.id, debt_id)
+    from app.services.debt_schedule import initialize, today_local
+    if body.next_due and body.next_due != debt.next_due and body.next_due < today_local():
+        raise HTTPException(422, "First automatic payment must be today or later.")
+    rebase = any(getattr(debt, key) != getattr(body, key) for key in ("balance", "annual_rate", "remaining_months"))
     for key, value in body.model_dump().items():
         setattr(debt, key, value)
+    if rebase:
+        # The edited lender figures become the new baseline; old payments stay
+        # in spending history but must not be deducted from that baseline again.
+        db.query(DebtPayment).filter_by(user_id=current_user.id, debt_id=debt.id).update({"applied_cents": 0})
+        initialize(debt)
     db.commit()
     db.refresh(debt)
-    return serialize(debt)
+    from app.services.debt_schedule import sync
+    sync(db, current_user.id)
+    return serialize(debt, db)
 
 
 @router.delete("/{debt_id}", status_code=204)

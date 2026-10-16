@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Column, Date, ForeignKey, Integer, Numeric, String
 from app.database import Base
 
 
@@ -11,3 +11,8 @@ class Debt(Base):
     annual_rate = Column(Numeric(7, 4), nullable=False)
     remaining_months = Column(Integer, nullable=False)
     original_principal = Column(Numeric(14, 2), nullable=True)
+
+    total_due_cents = Column(Integer, nullable=True)
+    fixed_monthly_cents = Column(Integer, nullable=True)
+    automatic_day = Column(Integer, nullable=True)
+    next_due = Column(Date, nullable=True)

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView } from "react-native";
 import { ChevronRight, Target } from "lucide-react-native";
 import { Alert, Text, View } from "../../preferences/LocalizedNative";
@@ -9,27 +9,39 @@ import BackButton from "../BackButton";
 import FinancialPlanCard from "./FinancialPlanCard";
 import PlanningForm from "./PlanningForm";
 import BudgetPlanEditor from "./BudgetPlanEditor";
-import { FinancialPlan, PlanningContext, PlanningProfile } from "../../types/plans";
-import { getPlanningContext, getPlans, planningRequest, savePlan, confirmBudgetPlan } from "../../services/planningService";
+import { FinancialPlan, PlanningContext, PlanningProfile, PlanSuggestion, SpendingStatus } from "../../types/plans";
+import { getPlanningContext, getPlans, getSpendingStatus, planningRequest, savePlan, confirmBudgetPlan } from "../../services/planningService";
 import { SessionExpiredError } from "../../services/apiClient";
 
-type Props = { apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onStartPlanning: () => void; initialProfile?: PlanningProfile };
-export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning, initialProfile }: Props) {
+type Props = { apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onStartPlanning: () => void; initialProfile?: PlanningProfile; focusPlanId?: string };
+export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning, initialProfile, focusPlanId }: Props) {
   const { palette, styles } = useAITheme();
   const s = createPlanningStyles(palette);
   const [plans, setPlans] = useState<FinancialPlan[]>([]);
   const [context, setContext] = useState<PlanningContext | null>(null);
   const [selected, setSelected] = useState<FinancialPlan | null>(null);
-  const [editing, setEditing] = useState<{ profile?: PlanningProfile; id?: string } | null>(initialProfile ? { profile: initialProfile } : null);
+  const [editing, setEditing] = useState<{ profile?: PlanningProfile; id?: string; suggestion?: PlanSuggestion } | null>(initialProfile ? { profile: initialProfile } : null);
   const [preview, setPreview] = useState<FinancialPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const focused = useRef(false);
+  // This month's verified spending status; optional, so plans still load without it
+  const [status, setStatus] = useState<SpendingStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getSpendingStatus(apiBaseUrl).then(value => { if (!cancelled) setStatus(value); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [apiBaseUrl, revision]);
   useEffect(() => {
     let cancelled = false; setBusy(true); setError("");
     Promise.all([getPlans(apiBaseUrl), getPlanningContext(apiBaseUrl)]).then(([rows, data]) => {
-      if (!cancelled) { setPlans(rows); setContext(data); }
+      if (!cancelled) {
+        setPlans(rows); setContext(data);
+        // Opened from a savings goal: show that plan's details once
+        if (focusPlanId && !focused.current) { focused.current = true; setSelected(rows.find(row => row.id === focusPlanId) ?? null); }
+      }
     }).catch(err => { if (!cancelled && !(err instanceof SessionExpiredError)) setError(err.message); }).finally(() => { if (!cancelled) setBusy(false); });
     return () => { cancelled = true; };
   }, [apiBaseUrl, revision]);
@@ -42,9 +54,10 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
     } catch (err) { if (!(err instanceof SessionExpiredError)) setError((err as Error).message); }
     finally { setBusy(false); }
   };
-  const remove = (id: string) => Alert.alert("Delete this plan?", "Recorded expenses and income will remain.", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
+  const remove = (id: string) => Alert.alert("Delete this plan?", "This plan will be permanently deleted. Your savings, expenses, income and budgets are kept; savings assigned to this plan become general savings.", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => {
     if (busy) return; setBusy(true); setError("");
-    planningRequest(apiBaseUrl, "/plans/" + id, "DELETE").then(() => { setPlans(rows => rows.filter(row => row.id !== id)); setSelected(null); }).catch(err => { if (!(err instanceof SessionExpiredError)) setError(err.message); }).finally(() => setBusy(false));
+    // Back to My Financial Plans, reloaded from the server
+    planningRequest(apiBaseUrl, "/plans/" + id, "DELETE").then(() => { setPlans(rows => rows.filter(row => row.id !== id)); setSelected(null); setRevision(n => n + 1); }).catch(err => { if (!(err instanceof SessionExpiredError)) setError(err.message); }).finally(() => setBusy(false));
   } }]);
   const back = () => {
     if (busy || formBusy) return;
@@ -58,7 +71,7 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
     {(inDetails || inForm) && <BackButton onPress={back} disabled={busy || formBusy} label={inForm && selected ? "Back to plan" : "Back to plans"} />}
     <View style={styles.cardTitleBlock}><Text style={styles.eyebrow}>Your finances</Text><Text style={styles.title}>{inForm ? editing?.id ? "Edit plan" : "Create a Plan" : inDetails ? "Plan details" : "My Financial Plans"}</Text></View>
   </View>;
-  if (inForm && selected?.budgetGoalSource) return <View style={s.plansContainer}>{header}<ScrollView contentContainerStyle={s.content}><BudgetPlanEditor plan={selected} apiBaseUrl={apiBaseUrl} onBusyChange={setFormBusy} onCancel={() => { setEditing(null); setError(""); }} onPreview={plan => { setPreview(plan); onPreview(plan); }} /></ScrollView></View>;
+  if (inForm && selected?.budgetGoalSource) return <View style={s.plansContainer}>{header}<ScrollView contentContainerStyle={s.content}><BudgetPlanEditor plan={selected} suggestion={editing?.suggestion} apiBaseUrl={apiBaseUrl} onBusyChange={setFormBusy} onCancel={() => { setEditing(null); setError(""); }} onPreview={plan => { setPreview(plan); onPreview(plan); }} /></ScrollView></View>;
   if (inForm && context) return <View style={s.plansContainer}>
     {header}
     <PlanningForm key={editing?.id ?? "new"} apiBaseUrl={apiBaseUrl} context={context} initial={editing?.profile} onBusyChange={setFormBusy} onCancel={() => { setEditing(null); setError(""); }} onPreview={plan => { setPreview(plan); onPreview(plan); }} />
@@ -69,8 +82,9 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
       {!!error && <Text style={s.error} accessibilityRole="alert">{error}</Text>}
       <FinancialPlanCard key={preview ? "draft" : plan.id} plan={plan} busy={busy}
         onSave={preview ? () => { void save(); } : undefined}
-        onEdit={!preview && context ? () => { setError(""); setEditing({ profile: plan.profile, id: plan.id }); } : undefined}
-        onDelete={!preview && plan.id ? () => remove(plan.id!) : undefined} />
+        onEdit={!preview && context ? (suggestion?: PlanSuggestion) => { setError(""); setEditing({ profile: plan.profile, id: plan.id, suggestion }); } : undefined}
+        onDelete={!preview && plan.id ? () => remove(plan.id!) : undefined}
+        status={preview ? null : status} apiBaseUrl={apiBaseUrl} onStatusChange={setStatus} />
       {preview && <Pressable style={[s.button, s.secondary, busy && s.muted]} disabled={busy} onPress={() => { setEditing(current => ({ ...current, profile: preview.profile })); setPreview(null); }}><Text style={s.secondaryText}>Adjust Details</Text></Pressable>}
     </ScrollView></View>;
   }

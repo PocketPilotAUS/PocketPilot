@@ -187,7 +187,7 @@ def test_login_success(api_client, jwt_secret):
 
     data = response.json()
 
-    assert set(data) == {"access_token", "token_type", "expires_in"}
+    assert set(data) == {"access_token", "refresh_token", "token_type", "expires_in"}
     assert data["token_type"] == "bearer"
     assert data["expires_in"] == 30 * 60
 
