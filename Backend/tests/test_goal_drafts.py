@@ -1,4 +1,5 @@
 import json
+import pytest
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from conftest import register_user, login_user, auth_headers
@@ -121,3 +122,113 @@ def test_stale_budget_rejected_and_edit_preview_does_not_save(api_client,db_sess
     updated=api_client.put('/planning/budget-plans/'+saved['id'],headers=headers,json=body(next_draft))
     assert updated.status_code==200 and updated.json()['id']==saved['id']
     assert updated.json()['monthlyContribution']==700 and db_session.query(FinancialPlan).count()==1
+
+
+def chat_goal_draft(client, headers, monkeypatch):
+    # Exercise the real chat calculator; only Ollama responses are stubbed.
+    monkeypatch.setattr("app.routers.chat.extract_goal_facts", lambda _: json.dumps({
+        "goal": "iPhone", "goal_kind": "savings", "target_amount": 5000,
+        "current_amount": 0, "deadline": "2090-03-31", "deadline_in_months": None,
+    }))
+    monkeypatch.setattr("app.routers.chat.generate_chat_reply", lambda _: json.dumps({
+        "reply": "Review your plan.", "action": None, "planning": None,
+    }))
+    response = client.post("/ai/chat", headers=headers, json={
+        "require_budget": True,
+        "messages": [{"role": "user", "content": "I want to save 5000 AED for an iPhone by March 31, 2090."}],
+    })
+    assert response.status_code == 200, response.text
+    plan = response.json()["plan"]
+    assert plan is not None and plan["ready"] and "id" not in plan
+    return plan
+
+
+def create_goal_test_debt(client, headers, balance=12000):
+    response = client.post("/debts", headers=headers, json={
+        "name": "Car", "balance": balance, "annual_rate": 0, "remaining_months": 12,
+    })
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+@pytest.mark.parametrize("with_debt", [False, True])
+def test_chat_draft_accept_and_adjust_share_budget(api_client, monkeypatch, db_session, with_debt):
+    from app.services.budget_goals import fingerprint
+
+    headers = auth(api_client)
+    setup(api_client, headers)
+    if with_debt:
+        create_goal_test_debt(api_client, headers)
+    draft = chat_goal_draft(api_client, headers, monkeypatch)
+    now = datetime.now(timezone(timedelta(hours=4))).date()
+    dashboard = api_client.get(
+        f"/budget/monthly?year={now.year}&month={now.month}", headers=headers).json()
+    assert draft["budgetFingerprint"] == fingerprint(dashboard)
+    expected_remaining = 2780 if with_debt else 3780
+    assert draft["availableAfter"] == expected_remaining
+    assert {row["category"]: row["baseline"] for row in draft["allocations"]} == {
+        **{"Rent": 5000, "Food": 1220}, **({"Debt": 1000} if with_debt else {}),
+    }
+    assert db_session.query(FinancialPlan).count() == 0
+
+    # Accept the untouched AI draft.
+    accepted = api_client.post("/planning/budget-plans", headers=headers, json=body(draft))
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["budgetFingerprint"] == draft["budgetFingerprint"]
+
+    # The Adjust editor sends this same payload shape, with edited goal details.
+    preview = api_client.post("/planning/budget-plans/preview", headers=headers, json={
+        **body(draft), "profile": {**draft["profile"], "monthly_contribution": 500},
+    })
+    assert preview.status_code == 200, preview.text
+    edited = preview.json()
+    assert edited["budgetFingerprint"] == draft["budgetFingerprint"]
+    assert edited["availableAfter"] == expected_remaining
+    assert edited["monthlyContribution"] == 500
+    assert db_session.query(FinancialPlan).count() == 1  # Preview never saves.
+    updated = api_client.put(
+        "/planning/budget-plans/" + accepted.json()["id"], headers=headers, json=body(edited))
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["monthlyContribution"] == 500
+    assert db_session.query(FinancialPlan).count() == 1
+
+
+@pytest.mark.parametrize("change", ["income", "expense_target", "derived_debt"])
+def test_chat_draft_rejects_real_budget_changes(api_client, monkeypatch, db_session, change):
+    headers = auth(api_client)
+    setup(api_client, headers)
+    create_goal_test_debt(api_client, headers)
+    draft = chat_goal_draft(api_client, headers, monkeypatch)
+    now = datetime.now(timezone(timedelta(hours=4))).date()
+    from app.services.budget_goals import fingerprint
+    unchanged = api_client.get(
+        f"/budget/monthly?year={now.year}&month={now.month}", headers=headers).json()
+    assert draft["budgetFingerprint"] == fingerprint(unchanged)
+    if change == "income":
+        response = api_client.put(
+            f"/budget/income?year={now.year}&month={now.month}",
+            headers=headers, json={"amount": 11000})
+    elif change == "expense_target":
+        response = api_client.put(
+            f"/budget/setup?year={now.year}&month={now.month}", headers=headers, json={
+                "income": 10000,
+                "categories": [{"name": "Rent", "amount": 5100}, {"name": "Food", "amount": 1220}],
+            })
+    else:
+        create_goal_test_debt(api_client, headers, balance=6000)
+        response = None
+    if response is not None:
+        assert response.status_code == 200, response.text
+    rejected = api_client.post("/planning/budget-plans", headers=headers, json=body(draft))
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Your budget changed. Ask AI Chat to refresh the plan before confirming."
+    assert db_session.query(FinancialPlan).count() == 0
+
+    # Adjust can refresh a stale draft; only explicit acceptance persists it.
+    preview = api_client.post("/planning/budget-plans/preview", headers=headers, json=body(draft))
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["budgetFingerprint"] != draft["budgetFingerprint"]
+    assert db_session.query(FinancialPlan).count() == 0
+    saved = api_client.post("/planning/budget-plans", headers=headers, json=body(preview.json()))
+    assert saved.status_code == 201, saved.text
+    assert db_session.query(FinancialPlan).count() == 1

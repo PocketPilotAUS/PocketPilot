@@ -207,7 +207,7 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     sync_recurring(db, current_user.id)
     today = datetime.now(timezone(timedelta(hours=4))).date()
     period = body.review_budget or BudgetPeriod(year=today.year, month=today.month)
-    budget = budget_summary(db, current_user.id, period.year, period.month)
+    budget = budget_summary(db, current_user.id, period.year, period.month, include_debt=True)
     if body.review_budget and budget["ideal_budget"] is None:
         raise HTTPException(422, "Create and save your budget before requesting an AI review.")
     goal_mode = not body.review_budget and (body.goal_planning or any(
