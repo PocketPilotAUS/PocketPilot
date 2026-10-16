@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { ScrollView, KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, StatusBar } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, StatusBar } from "react-native";
 import { View, Text, TextInput } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Eye, EyeOff } from "lucide-react-native";
@@ -8,10 +8,7 @@ import BackButton from "../components/BackButton";
 import { navigationStyles } from "../styles/NavigationStyles";
 
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
-import AmbientBackground from "../components/AmbientBackground";
-import MetallicGlassCard from "../components/MetallicGlassCard";
-import MetallicGlassButton from "../components/MetallicGlassButton";
-import { useAppTheme } from "../theme/ThemeContext";
+import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
 import { createRegisterStyles } from "../styles/RegisterStyles";
 import {
   register,
@@ -32,8 +29,8 @@ export default function RegisterScreen({
   onLogin,
   onBack,
 }: Props) {
-  const { colors, mode } = useAppTheme();
-  const styles = createRegisterStyles(colors);
+  const { palette, mode, styles: dashboardStyles } = useDashboardTheme();
+  const styles = createRegisterStyles(palette);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -95,8 +92,6 @@ export default function RegisterScreen({
         }
       />
 
-      <AmbientBackground />
-
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={
@@ -108,7 +103,7 @@ export default function RegisterScreen({
           keyboardShouldPersistTaps="handled"
         >
           {/* Back Button */}
-          <View style={navigationStyles.toolbar}><BackButton onPress={onBack} label="Back to welcome" colors={{ text: colors.text, surface: colors.surfaceElevated, border: colors.border }} /></View>
+          <View style={navigationStyles.toolbar}><BackButton onPress={onBack} label="Back to welcome" /></View>
 
           {/* Header */}
           <Text style={styles.eyebrow}>
@@ -124,7 +119,7 @@ export default function RegisterScreen({
           </Text>
 
           {/* Registration Form */}
-          <MetallicGlassCard>
+          <View style={dashboardStyles.card}>
             <Text style={styles.label}>
               Full name
             </Text>
@@ -133,7 +128,7 @@ export default function RegisterScreen({
               value={name}
               onChangeText={setName}
               placeholder="Your full name"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={palette.textMuted}
               autoCapitalize="words"
               autoComplete="name"
               style={styles.input}
@@ -147,7 +142,7 @@ export default function RegisterScreen({
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={palette.textMuted}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -164,7 +159,7 @@ export default function RegisterScreen({
                 value={password}
                 onChangeText={setPassword}
                 placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={palette.textMuted}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -173,6 +168,7 @@ export default function RegisterScreen({
               />
 
               <Pressable
+                style={styles.visibilityButton}
                 onPress={() =>
                   setShowPassword(!showPassword)
                 }
@@ -186,12 +182,12 @@ export default function RegisterScreen({
                 {showPassword ? (
                   <EyeOff
                     size={20}
-                    color={colors.textSecondary}
+                    color={palette.textSecondary}
                   />
                 ) : (
                   <Eye
                     size={20}
-                    color={colors.textSecondary}
+                    color={palette.textSecondary}
                   />
                 )}
               </Pressable>
@@ -205,7 +201,7 @@ export default function RegisterScreen({
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               placeholder="Re-enter your password"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={palette.textMuted}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoCorrect={false}
@@ -223,16 +219,23 @@ export default function RegisterScreen({
             <View style={styles.submitContainer}>
               {loading ? (
                 <ActivityIndicator
-                  color={colors.primary}
+                  color={palette.accent}
                 />
               ) : (
-                <MetallicGlassButton
-                  title="Create Account  →"
+                <Pressable
                   onPress={handleRegister}
-                />
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    dashboardStyles.primaryButton,
+                    styles.submitButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={dashboardStyles.primaryButtonText}>Create Account</Text>
+                </Pressable>
               )}
             </View>
-          </MetallicGlassCard>
+          </View>
 
           {/* Login Navigation */}
           <View style={styles.loginRow}>

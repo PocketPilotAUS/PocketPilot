@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { ScrollView, KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, StatusBar } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ActivityIndicator, StatusBar } from "react-native";
 import { View, Text, TextInput } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Eye, EyeOff } from "lucide-react-native";
@@ -8,10 +8,7 @@ import BackButton from "../components/BackButton";
 import { navigationStyles } from "../styles/NavigationStyles";
 
 import KeyboardFormScrollView from "../components/KeyboardFormScrollView";
-import AmbientBackground from "../components/AmbientBackground";
-import MetallicGlassCard from "../components/MetallicGlassCard";
-import MetallicGlassButton from "../components/MetallicGlassButton";
-import { useAppTheme } from "../theme/ThemeContext";
+import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
 import { createLoginStyles } from "../styles/LoginStyles";
 import { login, AuthUser } from "../services/authService";
 
@@ -28,8 +25,8 @@ export default function LoginScreen({
   onRegister,
   onBack,
 }: Props) {
-  const { colors, mode } = useAppTheme();
-  const styles = createLoginStyles(colors);
+  const { palette, mode, styles: dashboardStyles } = useDashboardTheme();
+  const styles = createLoginStyles(palette);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -70,8 +67,6 @@ export default function LoginScreen({
         barStyle={mode === "dark" ? "light-content" : "dark-content"}
       />
 
-      <AmbientBackground />
-
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -81,7 +76,7 @@ export default function LoginScreen({
           keyboardShouldPersistTaps="handled"
         >
           {/* Back Button */}
-          <View style={navigationStyles.toolbar}><BackButton onPress={onBack} label="Back to welcome" colors={{ text: colors.text, surface: colors.surfaceElevated, border: colors.border }} /></View>
+          <View style={navigationStyles.toolbar}><BackButton onPress={onBack} label="Back to welcome" /></View>
 
           {/* Header */}
           <Text style={styles.eyebrow}>
@@ -97,7 +92,7 @@ export default function LoginScreen({
           </Text>
 
           {/* Login Form */}
-          <MetallicGlassCard>
+          <View style={dashboardStyles.card}>
             <Text style={styles.label}>
               Email address
             </Text>
@@ -106,7 +101,7 @@ export default function LoginScreen({
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={palette.textMuted}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -123,7 +118,7 @@ export default function LoginScreen({
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Enter your password"
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={palette.textMuted}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -132,6 +127,7 @@ export default function LoginScreen({
               />
 
               <Pressable
+                style={styles.visibilityButton}
                 onPress={() => setShowPassword(!showPassword)}
                 accessibilityRole="button"
                 accessibilityLabel={
@@ -143,12 +139,12 @@ export default function LoginScreen({
                 {showPassword ? (
                   <EyeOff
                     size={20}
-                    color={colors.textSecondary}
+                    color={palette.textSecondary}
                   />
                 ) : (
                   <Eye
                     size={20}
-                    color={colors.textSecondary}
+                    color={palette.textSecondary}
                   />
                 )}
               </Pressable>
@@ -165,16 +161,23 @@ export default function LoginScreen({
             <View style={styles.submitContainer}>
               {loading ? (
                 <ActivityIndicator
-                  color={colors.primary}
+                  color={palette.accent}
                 />
               ) : (
-                <MetallicGlassButton
-                  title="Sign In  →"
+                <Pressable
                   onPress={handleLogin}
-                />
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    dashboardStyles.primaryButton,
+                    styles.submitButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={dashboardStyles.primaryButtonText}>Sign In</Text>
+                </Pressable>
               )}
             </View>
-          </MetallicGlassCard>
+          </View>
 
           {/* Register Navigation */}
           <View style={styles.registerRow}>

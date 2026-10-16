@@ -71,7 +71,7 @@ function PocketPilotApp() {
   const settingsReturn = useRef<Screen>("dashboard");
   const openSettings = () => { settingsReturn.current = screen; setScreen("settings"); };
 
-  const API_BASE_URL = "http://192.168.1.16:8000";
+  const API_BASE_URL = "http://192.168.1.22:8000";
   const chatSession = useChatSession(API_BASE_URL);
 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -300,7 +300,7 @@ function PocketPilotApp() {
 
   if (screen === "welcome") {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={dashboard.styles.screen}>
         <StatusBar
           barStyle={mode === "dark" ? "light-content" : "dark-content"}
         />
