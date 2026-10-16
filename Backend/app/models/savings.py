@@ -23,3 +23,5 @@ class ManualSavings(Base):
     label = Column(String(80), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     request_key = Column(String(36), nullable=False)
+    # Optional financial plan this contribution counts toward; null is general savings
+    goal_id = Column(String(36), nullable=True, index=True)

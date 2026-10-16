@@ -273,6 +273,36 @@ export const createTransactionsStyles = (p: DashboardPalette) =>
       marginTop: 8,
     },
 
+    recurringState: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      gap: 10,
+      paddingVertical: 16,
+    },
+
+    recurringStopped: {
+      opacity: 0.55,
+    },
+
+    recurringEdit: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: p.track,
+    },
+
+    recurringForm: {
+      gap: 8,
+    },
+
+    recurringSave: {
+      flex: 0,
+      marginTop: 10,
+    },
+
     // Bottom sheets
 
     sheetBackdrop: {

@@ -117,7 +117,10 @@ def test_saved_budget_authoritative_and_resume_preserves_goal(api_client, monkey
     assert data['budget_goal']['availableBefore'] == 1000
     assert Decimal(data['planning_profile']['income']) == 10000
     assert data['planning_profile']['expenses'] == {}
+    # The model's deadline was never stated by the user, so no plan is offered or saved.
     assert data['proposal'] is None and data['plan'] is None
+    from app.models.financial_plan import FinancialPlan
+    assert db_session.query(FinancialPlan).count() == 0
     assert captured[1:] == history
     assert 'School fees' in captured[0]['content']
     assert 'Never substitute transaction totals' in captured[0]['content']

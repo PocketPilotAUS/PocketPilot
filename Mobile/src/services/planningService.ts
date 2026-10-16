@@ -1,5 +1,5 @@
 import { apiFetch } from "./apiClient";
-import type { FinancialPlan, PlanningContext, PlanningProfile } from "../types/plans";
+import type { AdjustmentProposal, FinancialPlan, PlanningContext, PlanningProfile, SpendingStatus } from "../types/plans";
 export async function planningRequest<T>(base: string, path: string, method = "GET", profile?: PlanningProfile): Promise<T> {
   const response = await apiFetch(base, `/planning${path}`, { method, ...(profile ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) } : {}) });
   if (!response.ok) {
@@ -17,3 +17,15 @@ export async function confirmBudgetPlan(base: string, plan: FinancialPlan, id?: 
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(typeof data.detail === "string" ? data.detail : "Could not confirm plan. Please try again."); }
   return response.json();
 }
+
+// Spending monitoring and AI budget adjustments (current month)
+async function send<T>(base: string, path: string, body: object): Promise<T> {
+  const response = await apiFetch(base, `/planning${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(typeof data.detail === "string" ? data.detail : "Something went wrong. Please try again."); }
+  return response.json();
+}
+export const getSpendingStatus = (base: string) => planningRequest<SpendingStatus>(base, "/status");
+export const proposeAdjustment = (base: string, instructions?: string, planId?: string) =>
+  send<AdjustmentProposal>(base, "/adjustments/proposal", { ...(instructions ? { instructions } : {}), ...(planId ? { plan_id: planId } : {}) });
+export const acceptAdjustment = (base: string, proposal: AdjustmentProposal, requestKey: string) =>
+  send<SpendingStatus>(base, "/adjustments/accept", { fingerprint: proposal.fingerprint, request_key: requestKey, changes: proposal.changes.map(change => ({ category: change.category, limit: change.limit })) });

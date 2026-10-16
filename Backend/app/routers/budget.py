@@ -143,7 +143,10 @@ def setup(body: BudgetSetup, current_user: CurrentUser, year: int = Query(ge=1, 
     if plan is None:
         plan = BudgetPlan(user_id=current_user.id, year=year, month=month)
         db.add(plan)
-    plan.percentages = json.dumps({"version": 2, "categories": [{"name": category.name, "amount": str(category.amount)} for category in body.categories]})
+    # Keep the month's accepted AI adjustment history when the budget is edited
+    history = json.loads(plan.percentages).get("adjustments") if plan.percentages else None
+    plan.percentages = json.dumps({"version": 2, "categories": [{"name": category.name, "amount": str(category.amount)} for category in body.categories],
+                                   **({"adjustments": history} if history else {})})
     db.commit()
     return summary(db, current_user.id, year, month)
 

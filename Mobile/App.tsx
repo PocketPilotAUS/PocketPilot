@@ -27,6 +27,7 @@ import AnimatedWelcome from "./src/components/AnimatedWelcome";
 import FinancialOverview from "./src/components/dashboard/FinancialOverview";
 import BudgetTrackerScreen from "./src/screens/BudgetTrackerScreen";
 import HomeSections from "./src/components/dashboard/HomeSections";
+import SpendingAlert from "./src/components/dashboard/SpendingAlert";
 import SpendingScreen from "./src/screens/SpendingScreen";
 import DebtScreen from "./src/screens/DebtScreen";
 import SavingsScreen from "./src/screens/SavingsScreen";
@@ -65,6 +66,8 @@ function PocketPilotApp() {
     | "settings";
 
   const [reviewProfile, setReviewProfile] = useState<PlanningProfile | undefined>();
+  // Plan to open directly in My Financial Plans (from a savings goal)
+  const [focusPlanId, setFocusPlanId] = useState<string | undefined>();
   const [screen, setScreen] = useState<Screen>("welcome");
   const [spendingRevision, setSpendingRevision] = useState(0);
   const screenRef = useRef<Screen>(screen);
@@ -200,7 +203,7 @@ function PocketPilotApp() {
     <View style={styles.container}>
       <View style={styles.container}>{content}</View>
       <CurrencyNotice />
-      <BottomNavigation active={screen === "budgetTracker" || screen === "spending" || screen === "debt" || screen === "savings" ? "dashboard" : screen as AppTab} onSelect={tab => { if (tab === "financialPlans" && screen !== tab) setReviewProfile(undefined); setScreen(tab); }} />
+      <BottomNavigation active={screen === "budgetTracker" || screen === "spending" || screen === "debt" || screen === "savings" ? "dashboard" : screen as AppTab} onSelect={tab => { if (tab === "financialPlans" && screen !== tab) { setReviewProfile(undefined); setFocusPlanId(undefined); } setScreen(tab); }} />
     </View>
   );
   if (checkingSession || !preferencesReady) {
@@ -240,7 +243,7 @@ function PocketPilotApp() {
 
   if (screen === "settings") {
     return <SettingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen(settingsReturn.current)} onUpdated={setCurrentUser} onLogout={handleLogout} onPasswordChanged={async () => {
-      await logout(API_BASE_URL); chatSession.reset(); setReviewProfile(undefined); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
+      await logout(API_BASE_URL); chatSession.reset(); setReviewProfile(undefined); setFocusPlanId(undefined); setCurrentUser(null); setSpending(null); screenRef.current = "login"; setScreen("login");
     }} />;
   }
 
@@ -252,13 +255,14 @@ function PocketPilotApp() {
   }
 
   if (screen === "aiChat") {
-    return withNavigation(<AIChatScreen onSetupBudget={() => setScreen("chatBudgetSetup")} apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setScreen("financialPlans"); }} session={chatSession} />);
+    return withNavigation(<AIChatScreen onSetupBudget={() => setScreen("chatBudgetSetup")} apiBaseUrl={API_BASE_URL} onReviewProfile={profile => { setReviewProfile(profile); setFocusPlanId(undefined); setScreen("financialPlans"); }} session={chatSession} />);
   }
 
   if (screen === "financialPlans") {
     return withNavigation(<FinancialPlansScreen
       apiBaseUrl={API_BASE_URL}
       initialProfile={reviewProfile}
+      focusPlanId={focusPlanId}
       onPreview={chatSession.addPlanPreview}
       onStartPlanning={() => { chatSession.setDraft("Help me plan how to save for a goal by a specific date."); setScreen("aiChat"); }}
     />);
@@ -322,7 +326,8 @@ function PocketPilotApp() {
   }
 
   if (screen === "savings") {
-    return withNavigation(<SavingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")} />);
+    return withNavigation(<SavingsScreen apiBaseUrl={API_BASE_URL} onBack={() => setScreen("dashboard")}
+      onOpenPlan={planId => { setReviewProfile(undefined); setFocusPlanId(planId); setScreen("financialPlans"); }} />);
   }
 
   if (screen === "welcome") {
@@ -372,6 +377,8 @@ function PocketPilotApp() {
           apiBaseUrl={API_BASE_URL}
           onSaved={setSpending}
         />
+
+        <SpendingAlert apiBaseUrl={API_BASE_URL} refreshKey={spending} onOpen={() => { setReviewProfile(undefined); setFocusPlanId(undefined); setScreen("financialPlans"); }} />
 
         <HomeSections
           onOpenBudget={() => setScreen("budgetTracker")}

@@ -18,7 +18,9 @@ PocketPilot/
     app/database.py
     app/models/            User and Transaction models
     app/schemas/           Request and response validation
+    app/services/          Planning, savings goals, goal dates, spending monitor, budget adjustments
     migrate_add_users.py   Safe migration for existing databases
+    migrate_*.py           Feature migrations (each makes a backup first)
     .env.example           Template for Backend/.env
   Mobile/                  Expo React Native TypeScript app
     App.tsx
@@ -109,7 +111,8 @@ The backend reads settings from `Backend/.env` (copied from `Backend/.env.exampl
 |---|---|---|
 | `JWT_SECRET_KEY` | Yes, for login | Signs login tokens. At least 32 characters; generate it as shown above. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No | Token lifetime, 1–1440 minutes. Default 30. |
-| `OLLAMA_URL` | Only for AI | OpenAI-compatible Ollama URL, e.g. `http://localhost:11434/v1` |
+| `OLLAMA_URL` | Only for AI | Ollama URL, e.g. `http://localhost:11434` (a trailing `/v1` is also accepted). The app uses the model `qwen3:4b`. |
+| `OLLAMA_THINK` | No | `true` (default) lets the model reason before answering. Set `false` on slower machines: with reasoning on, a chat reply can take minutes and exceed the 180-second request timeout. |
 
 Secret management:
 
@@ -155,6 +158,8 @@ Use `--database path/to/file.db` to migrate a different file.
 
 **Existing transactions become unowned.** They were created before accounts existed, so the migration does not guess who they belong to. They stay in the database but are **hidden from every user** until ownership is assigned on purpose. There is no tool for assigning them yet.
 
+**Existing database from before savings goals:** run `python migrate_savings_goals.py` once (stop the API first). It backs up the database, then adds the optional `manual_savings.goal_id` column; existing savings stay general savings. Other feature migrations (`migrate_debts.py`, `migrate_savings.py`, `migrate_manual_savings.py`, …) work the same way and report "already up to date" when nothing is needed. A new database created with `init_db.py` already has every table and column.
+
 **Restoring a backup:** stop the server, then copy the backup over the database (for example `cp pocketpilot.backup-20261009-153826.db pocketpilot.db`, or `Copy-Item` on Windows). Backups contain the same financial data as the database: keep them private. They end in `.db`, so Git ignores them.
 
 ## What works in the current prototype
@@ -169,7 +174,12 @@ Use `--database path/to/file.db` to migrate a different file.
 - Backend monthly spending comparison and deterministic recommendations
 - Optional backend AI recommendation explanations via Ollama/Qwen3 (API tested; **not displayed in mobile UI yet**)
 - Safe, repeatable migration for existing SQLite databases
-
+- AI Chat recognises a financial goal in normal conversation, builds a verified plan from the saved budget and offers **Accept / Adjust / Reject**; only Accept saves it to My Financial Plans. Deadlines come from the user's own words ("by February 2027", "in six months"), never from model arithmetic
+- Savings: extra savings, contributions to a specific savings goal (goal progress updates without double counting), month-end confirmation of a month's savings (only after the month ends), and monthly history
+- Spending: planned budget versus recorded expenses, kept separate from savings
+- Spending monitoring for the current month with three levels (over budget, savings goal at risk, savings goal unaffordable), shown on Home and in Plans, with Planned versus Projected figures on the Plans Overview
+- Optional AI adjustment and recovery plans: validated month-end spending limits, plan options (later deadline), applied only after the user accepts
+- Recurring expenses shown as compact rows with an edit sheet
 ## API quick checks
 
 Full details: [docs/api-documentation.md](docs/api-documentation.md).
@@ -185,6 +195,11 @@ Full details: [docs/api-documentation.md](docs/api-documentation.md).
 - `GET /spending/compare?year=2026&month=10` — compare months
 - `GET /recommendations/?year=2026&month=10` — rules-based advice
 - `GET /recommendations/ai?year=2026&month=10` — optional AI explanation
+- `POST /ai/chat` — AI Chat; may return a verified, unsaved plan draft
+- `GET /planning/plans`, `POST /planning/budget-plans`, `PUT /planning/budget-plans/{id}`, `DELETE /planning/plans/{id}` — saved financial plans (progress includes savings assigned to the goal)
+- `GET /planning/status` — this month's spending status and risk level
+- `POST /planning/adjustments/proposal`, `POST /planning/adjustments/accept` — AI spending limits (draft, then explicit accept)
+- `GET /savings`, `POST/PUT/DELETE /savings/manual`, `PUT /savings/confirm` — savings, goal contributions, month confirmation
 
 All endpoints except the first three require `Authorization: Bearer <token>`.
 
@@ -200,7 +215,9 @@ python -m pytest tests
 
 Use `pytest tests`, not plain `pytest`: plain `pytest` also collects `test_ai_manual.py`, a manual script that needs a running Ollama server. The tests use temporary in-memory databases and a random test secret; they never touch `pocketpilot.db` or need a `.env` file.
 
-The backend suite covers authentication, token validation, password storage, cross-user data isolation, the migration (including repeated runs and rollback) and the original transaction, spending and recommendation behaviour.
+The backend suite covers authentication, token validation, password storage, cross-user data isolation, the migration (including repeated runs and rollback) and the original transaction, spending and recommendation behaviour. It also covers AI goal plans and deadlines (`test_proactive_goal_plans.py`, `test_goal_deadlines.py`), savings goals and month confirmation (`test_goal_savings.py`, `test_savings_confirmation.py`), and spending monitoring and AI adjustments (`test_spending_monitor.py`, `test_spending_forecast.py`, `test_plan_recommendations.py`, `test_buffer_warnings.py`). AI calls are mocked in tests; no Ollama server is needed.
+
+`tests/test_planning.py::test_invalid_profiles[patch4]` currently fails: it expects an expense category named "Unknown" to be rejected, but custom budget categories were intentionally allowed in commit c6c6566. The test needs updating by the planning feature's owner.
 
 From `Mobile`:
 
@@ -239,6 +256,16 @@ Known limitations:
 5. Build Profile/Settings, notification preferences, reminder system and persistent theme choice.
 6. Add rate limiting, HTTPS deployment, token refresh/logout, and password reset.
 
+## Financial planning and spending monitoring
+
+Monitoring runs on the server and is deterministic; AI is only used, on request, to suggest spending limits and wording.
+
+- **Levels** (current month): Level 3 when income minus recorded spending, debt payments, upcoming recurring bills and unpaid debt instalments is less than the monthly contributions of active savings goals. Level 2 when a credible spending forecast leaves less than those contributions, or when the money left after protecting the goal savings is smaller than what the saved budget still needs this month. Level 1 when a category is over budget but the goal remains affordable.
+- **Forecast:** fixed bills are not extrapolated; everyday categories use the current spending pace and up to three tracked past months. With too little history, the remaining planned budget is used and no Level 2 is raised from the projection.
+- **AI limits:** the server checks every amount (never below what is already spent or due, never above the projection, at most half of the spending still expected in a category) and calculates all totals. Accepting stores the limits for the month and only lowers category budgets; transactions are never changed.
+
 ## Git hygiene
+
+`Mobile/App.tsx` contains each developer's local `API_BASE_URL`: do not commit your own IP address.
 
 Never commit `Backend/venv/`, `Mobile/node_modules/`, `*.db` (including migration backups), `.env`, secrets, local credentials or Expo cache. Check `git status` and `git diff --cached` before committing. Documentation and source code can be committed after review.

@@ -13,6 +13,7 @@ from app.models.income import MonthlyIncome
 from app.models.transaction import Transaction
 from app.routers.budget import summary
 from app.services.debt_payments import monthly_cents, ready as payments_ready
+from app.services.goal_savings import goal_summaries, savings_goal
 
 router = APIRouter(prefix="/savings", tags=["Savings"])
 
@@ -46,6 +47,9 @@ class Confirmation(BaseModel):
     expected_debt_payments: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
     expected_income: Decimal = Field(ge=0, allow_inf_nan=False)
     expected_spent: Decimal = Field(ge=0, allow_inf_nan=False)
+    # What the user actually saved, after reviewing the calculated amount;
+    # None keeps the calculated amount
+    actual_saved: Decimal | None = Field(default=None, ge=0, le=1_000_000_000, max_digits=12, decimal_places=2, allow_inf_nan=False)
 
 
 @router.get("")
@@ -61,6 +65,7 @@ def overview(current_user: CurrentUser, year: int = Query(ge=1, le=9998), month:
             "total_saved": (sum(row.saved_cents for row in history) + sum(row.amount_cents for row in entries)) / 100,
             "manual_total": sum(row.amount_cents for row in entries) / 100,
             "manual_entries": [manual_record(row) for row in entries],
+            "goals": goal_summaries(db, current_user.id),
             "history": [record(row) for row in history]}
 
 
@@ -97,7 +102,11 @@ def confirm(body: Confirmation, current_user: CurrentUser, db: Session = Depends
         db.add(row)
     row.income_cents, row.spent_cents = cents(data["income"]), cents(data["spent"])
     row.extra_debt_cents = debt_paid
-    row.saved_cents = max(0, row.income_cents - row.spent_cents - row.extra_debt_cents)
+    calculated = max(0, row.income_cents - row.spent_cents - row.extra_debt_cents)
+    if body.actual_saved is not None and cents(body.actual_saved) > calculated:
+        db.rollback()
+        raise HTTPException(422, "Confirmed savings can't be more than this month's calculated savings. Record other money as extra savings.")
+    row.saved_cents = calculated if body.actual_saved is None else cents(body.actual_saved)
     db.commit()
     return record(row)
 
@@ -105,6 +114,8 @@ def confirm(body: Confirmation, current_user: CurrentUser, db: Session = Depends
 class ManualInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     label: str = Field(min_length=1, max_length=80)
+    # Savings-goal plan this entry counts toward; None keeps it general savings
+    goal_id: str | None = Field(default=None, min_length=1, max_length=36)
     amount: Decimal = Field(gt=0, le=1_000_000_000, max_digits=12, decimal_places=2, allow_inf_nan=False)
 
     @field_validator("label")
@@ -122,10 +133,18 @@ class ManualCreate(ManualInput):
 def manual_ready(db):
     if not inspect(db.get_bind()).has_table("manual_savings"):
         raise HTTPException(503, "Manual savings storage is not ready. Run Backend/migrate_manual_savings.py.")
+    if "goal_id" not in {column["name"] for column in inspect(db.get_bind()).get_columns("manual_savings")}:
+        raise HTTPException(503, "Savings goals storage is not ready. Run Backend/migrate_savings_goals.py.")
+
+
+def checked_goal(db, user_id, goal_id):
+    if goal_id is not None and savings_goal(db, user_id, goal_id) is None:
+        raise HTTPException(422, "Choose one of your savings goals or general savings.")
+    return goal_id
 
 
 def manual_record(row):
-    return {"id": row.id, "label": row.label, "amount": row.amount_cents / 100}
+    return {"id": row.id, "label": row.label, "amount": row.amount_cents / 100, "goal_id": row.goal_id}
 
 
 def owned_entry(db, user_id, entry_id):
@@ -144,7 +163,8 @@ def add_manual(body: ManualCreate, current_user: CurrentUser, db: Session = Depe
     previous = db.query(ManualSavings).filter_by(user_id=user_id, request_key=key).first()
     if previous:
         return manual_record(previous)
-    row = ManualSavings(user_id=user_id, label=body.label, amount_cents=cents(body.amount), request_key=key)
+    row = ManualSavings(user_id=user_id, label=body.label, amount_cents=cents(body.amount), request_key=key,
+                        goal_id=checked_goal(db, user_id, body.goal_id))
     db.add(row)
     try:
         db.commit()
@@ -161,6 +181,7 @@ def add_manual(body: ManualCreate, current_user: CurrentUser, db: Session = Depe
 def edit_manual(entry_id: int, body: ManualInput, current_user: CurrentUser, db: Session = Depends(get_db)):
     row = owned_entry(db, current_user.id, entry_id)
     row.label, row.amount_cents = body.label, cents(body.amount)
+    row.goal_id = checked_goal(db, current_user.id, body.goal_id)
     db.commit()
     return manual_record(row)
 

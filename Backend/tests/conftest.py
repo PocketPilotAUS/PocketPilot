@@ -19,6 +19,21 @@ def jwt_secret(monkeypatch):
     return secret
 
 
+@pytest.fixture(autouse=True)
+def default_ai_settings(monkeypatch):
+    # Tests check the team defaults, not a developer's local Backend/.env
+    monkeypatch.delenv("OLLAMA_THINK", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def no_goal_extraction(monkeypatch):
+    # Chat tests mock the model reply; the separate goal-fact extraction never
+    # reaches a real Ollama server unless a test replaces this stub.
+    def unavailable(messages):
+        raise ValueError("Goal extraction is not available in tests")
+    monkeypatch.setattr("app.routers.chat.extract_goal_facts", unavailable)
+
+
 @pytest.fixture
 def session_factory():
     # Separate in-memory database for each test
