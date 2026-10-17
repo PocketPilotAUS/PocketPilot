@@ -1,3 +1,5 @@
+> Historical handoff record. Earlier status and test counts may be superseded. Use the [current documentation index](README.md) for current behavior.
+
 # PocketPilot phase 3 handoff log
 
 This phase begins on 14 October 2026 after the Phase 2 handoff for commit b92ef5b, on feature/karim-planning-review. Add implementation, setup, verification and limitations here for the next developer handoff. Entries describe local work and do not imply commit, push or merge. The previously delivered Phase 2 Word document remains unchanged.

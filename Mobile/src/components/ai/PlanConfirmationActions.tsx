@@ -26,8 +26,8 @@ function PlanSummary({ plan }: { plan: FinancialPlan }) {
   </View>;
 }
 
-type Props = { plan: FinancialPlan; dismissed: boolean; busy: boolean; onConfirm: () => void; onEdit: () => void; onDecline: () => void };
-export default function PlanConfirmationActions({ plan, dismissed, busy, onConfirm, onEdit, onDecline }: Props) {
+type Props = { plan: FinancialPlan; dismissed: boolean; busy: boolean; saving?: boolean; onConfirm: () => void; onEdit: () => void; onDecline: () => void };
+export default function PlanConfirmationActions({ plan, dismissed, busy, saving = false, onConfirm, onEdit, onDecline }: Props) {
   const { styles: s } = useDashboardTheme();
   if (!plan.ready) return null;
   const summary = plan.budgetGoalSource ? <PlanSummary plan={plan} /> : null;
@@ -37,7 +37,7 @@ export default function PlanConfirmationActions({ plan, dismissed, busy, onConfi
     {summary}
     <Text style={s.heroHint}>Not saved yet. Accept to save it to My Financial Plans.</Text>
     <View style={s.buttonRow}>
-      <Pressable accessibilityRole="button" disabled={busy} onPress={onConfirm} style={[s.primaryButton, busy && s.buttonDisabled]}><Text style={s.primaryButtonText}>{busy ? "Saving…" : "Accept plan"}</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={onConfirm} style={[s.primaryButton, busy && s.buttonDisabled]}><Text style={s.primaryButtonText}>{saving ? "Saving…" : "Accept plan"}</Text></Pressable>
       <Pressable accessibilityRole="button" disabled={busy} onPress={onEdit} style={[s.secondaryButton, busy && s.buttonDisabled]}><Text style={s.secondaryButtonText}>Adjust</Text></Pressable>
     </View>
     <Pressable accessibilityRole="button" disabled={busy} onPress={onDecline} style={[s.secondaryButton, s.budgetSetupAction, busy && s.buttonDisabled]}><Text style={s.secondaryButtonText}>Reject</Text></Pressable>

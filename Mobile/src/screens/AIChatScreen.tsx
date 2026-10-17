@@ -127,12 +127,13 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onS
         <View style={[ai.bubble, ai.assistantBubble]}>
           <FormattedMessage content={message.content} />
           {message.budgetRequired && !messages.slice(index + 1).some(item => item.budgetGoal) && <Pressable disabled={busy || session.savingPlan !== null} onPress={onSetupBudget} style={[styles.primaryButton, styles.budgetSetupAction, busy && styles.buttonDisabled]} accessibilityRole="button"><Text style={styles.primaryButtonText}>Set up my budget</Text></Pressable>}
-          {message.budgetGoal && <BudgetGoalCard assessment={message.budgetGoal} disabled={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.budgetGoal)} onChoice={(choice: BudgetChoice) => {
+          {!proposal && message.budgetGoal && <BudgetGoalCard assessment={message.budgetGoal} disabled={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.budgetGoal)} onChoice={(choice: BudgetChoice) => {
             const prompt = choice.category === "*" ? (choice.target === null ? "My budget cannot be reduced. Keep all categories protected and suggest a later goal deadline." : "I am willing to explore possible budget cuts again. Ask what is realistic for me.") : choice.target === null ? `I cannot reduce ${choice.category}. Keep it protected for this goal.` : `For this goal scenario, I can manage ${choice.category} on ${formatAED(choice.target)} per month. My saved budget should stay unchanged.`;
             void session.send(prompt, undefined, choice);
           }} />}
-          {message.planningProfile && !message.goalPlanning && !message.plan?.ready && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
-          {message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan)}
+          {!proposal && message.planningProfile && !message.goalPlanning && !message.plan?.ready && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
+          {!proposal && message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan)}
+            saving={session.savingPlan === index}
             onConfirm={() => { void session.saveFinancialPlan(message.plan!, index); }}
             onEdit={() => { if (message.plan!.budgetGoalSource) { setEditingGoal(message.plan!); } else { onReviewProfile(message.plan!.profile); } }}
             onDecline={() => { onMessagesChange(current => current.map((item, i) => i === index ? { ...item, planDeclined: true } : item)); }} />}

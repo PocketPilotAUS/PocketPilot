@@ -26,6 +26,7 @@ For CNY requests, the backend projects the authenticated user's financial contex
 
 Deploy or run the matching frontend and backend revision together and restart an API server that is not using auto-reload. Older strict chat schemas do not accept the new request fields. Live model currency interpretation still needs a manual check; the automated tests mock model replies.
 
-## Verification
+## Validation and limitations
 
-The backend suite passed with 341 tests, including currency validation, immutable context projection, non-money fields, CNY proposal confirmation and planning draft normalization without persistence. Mobile typechecking and local component checks cover currency preference storage/failure, rate validation/cache/failure, localization, display conversion, budget drafts/review/save, expense and recurring saves, and planning money fields. The public AED endpoint was checked successfully. Native phone layout and a live Ollama CNY conversation remain manual review items.
+See [testing](testing.md) for current commands and coverage. Live device/Ollama behavior requires manual QA.
+Conversion uses current/cached rates, not historical transaction-day rates. Canonical storage remains AED.

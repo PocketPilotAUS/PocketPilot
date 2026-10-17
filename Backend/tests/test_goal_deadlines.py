@@ -92,12 +92,13 @@ def test_wrong_duration_in_reply_gets_verified_figures(api_client, monkeypatch):
     model(monkeypatch, None, 'February 2027 is 24 months away, so save AED 208.34 per month by September 2028.')
     data = api_client.post('/ai/chat', headers=headers, json={'messages': ASK, 'require_budget': True}).json()
     plan = data['plan']
-    assert data['reply'].startswith('February 2027 is 24 months away')
-    assert f"for {plan['months']} months" in data['reply'] and 'These are the figures in the plan card.' in data['reply']
-    assert f"{expected_deadline().year}" in data['reply'].split('Verified plan:')[1]
+    assert "24 months away" not in data["reply"] and "September 2028" not in data["reply"]
+    assert f"for {plan['months']} months" in data["reply"]
+    assert "draft" in data["reply"] and "Nothing has been saved" in data["reply"]
+    assert str(expected_deadline().year) in data["reply"]
 
 
-def test_consistent_reply_is_left_unchanged(api_client, monkeypatch):
+def test_consistent_figures_still_identify_pending_draft(api_client, monkeypatch):
     headers = auth(api_client); setup(api_client, headers)
     extractor(monkeypatch, PHONE)
     deadline = expected_deadline()
@@ -105,7 +106,9 @@ def test_consistent_reply_is_left_unchanged(api_client, monkeypatch):
                         {'income': 10000, 'year': today().year, 'month': today().month, 'ideal_budget': {'allocations': [{'category': 'Rent', 'target': 4000}, {'category': 'Food', 'target': 1600}]}}, today())['months']
     reply = f"Save for {months} months, by {deadline.strftime('%B')} {deadline.year}."
     model(monkeypatch, None, reply)
-    assert api_client.post('/ai/chat', headers=headers, json={'messages': ASK, 'require_budget': True}).json()['reply'] == reply
+    result = api_client.post('/ai/chat', headers=headers, json={'messages': ASK, 'require_budget': True}).json()
+    assert f"for {months} months" in result["reply"]
+    assert "Nothing has been saved" in result["reply"]
 
 
 def test_past_deadline_asks_for_a_new_date(api_client, monkeypatch, db_session):

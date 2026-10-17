@@ -1,3 +1,5 @@
+> Historical handoff record. Earlier status and test counts may be superseded. Use the [current documentation index](README.md) for current behavior.
+
 # PocketPilot phase 2 handoff log
 
 This phase starts after the developer handoff for commit `f9c3eb1`. Add each new change here so the next handoff includes implementation details, verification, setup requirements and remaining work. These entries describe local changes; they do not imply a commit, push or merge.

@@ -122,7 +122,8 @@ def test_bad_model_extraction_never_overwrites_saved_profile(api_client, monkeyp
     result = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'My income is 8500'}]})
     assert result.status_code == 200 and result.json()['planning_profile'] is None
     assert api_client.get('/planning/context', headers=headers).json()['profile']['current_amount'] == '0'
-    assert result.json()['reply'] == 'Advice'
+    assert "clarify" in result.json()["reply"]
+    assert result.json()["proposal"] is None
     assert 'could not safely interpret' not in result.json()['reply']
 
 

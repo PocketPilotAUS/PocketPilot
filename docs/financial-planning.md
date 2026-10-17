@@ -1,35 +1,21 @@
-# Financial planning
+# Financial Plans
 
-My Financial Plans now supports a guided form and persisted per-user plans. Chat and the form share a planning profile; saving a plan is a separate explicit action. Planned costs never become paid transactions through these endpoints.
+Two planning paths are implemented. Guided planning collects income, other household income, household size, expenses, typical months, goal amount/deadline and protected categories. Budget-backed AI goal planning uses the saved monthly budget, including derived debt obligations, rather than asking the model to invent allocations.
 
-## Setup
+`/planning/context` provides existing context. Saving `/planning/profile` stores inputs; `/planning/preview` evaluates without saving a plan. `/planning/plans` supports saved guided-plan CRUD. `/planning/budget-plans` creates a reviewed budget-backed plan, its `/{plan_id}` route updates one, and `/planning/budget-plans/preview` recalculates adjustments without persistence.
 
-From Backend, run `venv\Scripts\python.exe init_db.py` once after updating to create the additive `planning_profiles` and `financial_plans` tables. Existing records are preserved. Restart FastAPI and reload Expo Go. No new mobile dependencies are required.
+The backend computes figures deterministically. Goal contributions use remaining goal amount and the applicable contribution months; budget-backed deadlines count the current and target months inclusively. Explicitly unknown starting progress is not an invented contribution. Protected/essential allocations constrain possible reductions. Feasible, adjusted and later-deadline choices are reviewable scenarios, not automatic transfers or investment forecasts.
 
-## User flow
+## Draft lifecycle and fingerprints
 
-Open AI Chat → My Financial Plans → Create a Plan. Review household income, additional income, number of people supported, the main goal, target and deadline. Review monthly estimates and choose recorded past months only if they are complete and typical. Blank costs remain unknown unless those months are explicitly confirmed; enter zero only for costs that do not apply. Active recurring bills are suggestions and are not added twice to recorded expenses.
+AI Chat returns a draft with verified amounts, deadline and budget fingerprint. It is described as prepared and unsaved. Accept explicitly calls the save endpoint; only a successful response marks it saved. Adjust previews changes; Reject declines the local draft. Saved plans remain available independently of later chat messages.
 
-Review My Plan saves the planning profile and calculates a draft. The card explains income, costs, category targets, proposed cuts, shortfall, assumptions and historical comparisons. Save Plan persists the snapshot. The draft also appears in chat; saving it through the form updates its card. Saved plans can be edited or deleted. They persist across sign-out/app restart; conversation history does not.
+Chat generation, adjustment preview and acceptance use the same debt-aware budget baseline. The budget fingerprint covers effective year/month, saved income and normalized category targets including derived Debt. A genuine change returns a stale-budget rejection; refresh the draft rather than bypassing validation. Spending alone is not part of this fingerprint. Stale adjustment choices are dropped when their budget basis changes. Locked writes and request-key idempotency protect retries.
 
-In chat, extracted planning facts are unconfirmed drafts carried through follow-up turns. The UI links to a prefilled review form. Only an explicit form or plan save updates the persistent profile; model extraction never silently overwrites it. Missing facts are requested. Once the profile is complete, chat can return a server-calculated draft; Save Plan confirms it. Saving or updating income in a planning profile does not change the dashboard's recorded income.
+Plan snapshots do not automatically deduct money or record contributions. See [AI Chat](budget-goal-chat.md), [monitoring](spending-monitoring.md) and [savings](savings.md). Offline/model failures can prevent drafting even though manual financial screens remain available.
 
-## Calculations and limitations
+## Guided inputs and assumptions
 
-Income is take-home income plus explicitly supplied additional household income. Baseline expenses are user estimates or category averages from confirmed typical months. Essential categories and user-protected categories are not automatically cut. The first scenario considers reductions of up to 30% across unprotected entertainment, shopping and subscriptions, proportional to their amounts, only where needed to fund the goal. This is an editable product scenario, not a universal recommended spending level. A goal can remain infeasible; the app exposes that shortfall rather than fabricating affordable amounts.
+Typical historical months must be explicitly confirmed as complete before they supply category averages. Blank costs remain unknown; zero is entered only when a cost does not apply. Household size supplies context, not an invented per-person benchmark. Planning profile income does not overwrite recorded dashboard income. A guided form can save its profile before a separate plan save.
 
-Goal contributions are counted once per calendar month starting in the current month and including the deadline month. Savings growth is not assumed. Debt goal contributions are extra payments after entered minimums; interest/amortization and exact payoff dates are not calculated. A spending-control goal uses its target as a monthly expense ceiling. Household size provides context; the calculator does not invent a per-person food or housing benchmark.
-
-Confirmed history is used for baseline and month-to-month change prompts. Higher essential costs prompt questions rather than automatic cuts. History can be incomplete even when records exist. Users must confirm selected months. Changes to a saved plan's assumptions recalculate it; old saved plans are snapshots rather than automatically refreshed commitments.
-
-## API
-
-All routes require authentication and isolate data by user:
-
-- GET `/planning/context`: saved profile, current income, past month totals and recurring obligations.
-- PUT `/planning/profile`: validate/save profile and return a draft or missing fields.
-- POST `/planning/preview`: evaluate without saving.
-- GET/POST `/planning/plans`: list/save plan snapshots.
-- PUT/DELETE `/planning/plans/{id}`: recalculate an owned plan or delete it.
-
-Chat responses add optional `planning_profile` and `plan` fields. The model returns optional `planning` changes; they are validated before use. Financial calculations remain in backend code. Model extraction and live Ollama quality still require manual testing; API tests simulate model replies.
+The guided reduction scenario considers up to 30% of unprotected Entertainment, Shopping and Subscriptions where needed; this is a reviewable product assumption, not a universal spending recommendation. Infeasible goals expose shortfalls. Debt goal contributions are extra after stated minimums and do not calculate an exact lender payoff schedule; spending-control goals treat their target as a monthly ceiling. No savings interest or investment growth is assumed. Saved plans survive sign-out; chat conversation state does not.
