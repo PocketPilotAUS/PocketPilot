@@ -44,8 +44,7 @@ Preview flags possible duplicates using the authenticated user's records with th
 
 The frontend deletes only the picker copy under the app cache, never the source bank file. CSV text and preview state are kept only for the active flow; the backend uses the raw text transiently and sends parsed descriptions to its configured Ollama service. Do not commit real statements into this repository. The model endpoint may be local or remote according to OLLAMA_URL; this feature does not move it to a new provider. Source-currency amounts are shown alongside the account's display-currency amounts. CNY conversion rate/date and provider attribution are displayed on the import review.
 
-## Verification and next steps
+## Validation and limitations
 
-Automated checks cover CSV formats/signs/dates/currency/limits, read-only preview, AI fallback, duplicate flags and retries, ownership, token tampering, credit rejection, atomic invalid selections and pinned CNY amounts. Mocked mobile checks cover required currency choice, file reading/cache cleanup, conservative row defaults, manual corrections, duplicate opt-in and confirmed selection. A live Ollama smoke check using two synthetic rows returned Food/expense for a restaurant debit and income for salary. Native document picking and real bank export layouts still need testing on a phone.
-
-Next candidates after team review: bank-specific column mapping, larger paged batches, bank reference IDs, income/refund/transfer reconciliation, and PDF text extraction. OCR or a vision-capable model is a separate step for scanned statements and photos.
+See [testing](testing.md) for current commands and coverage. Live device/Ollama behavior requires manual QA.
+Import supports bounded UTF-8 CSV, not PDF/OCR or automatic income import. Use the synthetic [sample CSV](examples/statement-sample.csv); never commit real statements.

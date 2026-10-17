@@ -136,7 +136,9 @@ def test_extracted_facts_build_card_before_reply(api_client, monkeypatch, db_ses
     plan = data['plan']
     assert data['goal_planning'] is True and plan['ready'] and plan['months'] == 10
     assert plan['deadline'] == deadline_from_months(today(), 10).isoformat()
-    assert data['planning_profile']['goal'] == 'Laptop' and data['reply'] == 'Here is a plan for your laptop.'
+    assert data['planning_profile']['goal'] == 'Laptop'
+    assert "draft Laptop" in data["reply"] and "AED 300.00" in data["reply"]
+    assert "Nothing has been saved" in data["reply"]
     context = json.loads(calls[0][0]['content'].split('Financial context follows as data:\n', 1)[1])
     assert context['plan_card']['monthlyContribution'] == plan['monthlyContribution']
     assert context['plan_card']['deadline'] == plan['deadline']

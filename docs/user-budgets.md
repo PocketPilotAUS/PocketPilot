@@ -1,15 +1,17 @@
-# User-created monthly budgets
+# Monthly income, categories and Budget Tracker
 
-Open Spending from Home to find the spending breakdown and Budget Tracker. Spending shows Create your budget until the current user saves a budget for the displayed month. Recording income alone does not create allocations. Setup uses the same category icons and tile styling as Add Expense. Tapping a tile opens a monthly amount editor; Add to budget includes it and marks the tile with a check. Existing categories can be edited or removed. Add my own category collects a custom name and monthly amount, then makes that category available as a tile. There are no default selections or spending targets in the new flow.
+The Budget Tracker saves monthly income and category targets through `/budget/income` and `/budget/setup`; summaries come from `/budget/monthly`. Records are user- and year/month-specific. New accounts must enter their own income/budget rather than inheriting a fabricated default. Version-2 setup supports named custom categories with case-insensitive uniqueness. Legacy percentage plans remain supported through `/budget/plan`.
 
-Users enter monthly income and usual monthly amounts, review the total and available income or shortfall, then save. Saved amounts are targets, not paid expense records or savings transfers. A budget can exceed income; the review and tracker explicitly show the shortfall.
+Home, Spending and Financial Plans consume the saved budget. Targets represent allocations, not actual expenses. Transactions provide actual spending; allocations can exceed income and leave no available savings. Derived Debt allocations are calculated from obligations rather than independently editable duplicate entries.
 
-PUT `/budget/setup?year=YYYY&month=MM` accepts `income` and 1–50 `categories`, each with `name` and `amount`. Names are trimmed, printable, at most 40 characters and unique ignoring case. Amounts are nonnegative AED with at most two decimal places. Income and budget save in one database transaction.
+Debt inclusion is explicit in the summary service. Home and budget-backed AI goal generation/preview/accept use debt-aware snapshots. Other services may use the non-derived summary and account for actual debt payments or outstanding obligations separately; enabling debt everywhere would double-count in those flows.
 
-The existing `budget_plans.percentages` JSON field stores a version 2 payload containing user category amounts. No schema migration is required. Explicitly saved older percentage budgets remain readable and can be edited through the amount form. No budget is generated when a saved row is absent.
+Budget-backed planning fingerprints include the effective month, income and normalized category targets, including derived debt. Income, targets, obligations or a month rollover can invalidate an old draft. Actual spending alone is not part of that budget fingerprint; monitoring has its own broader state validation. See [planning](financial-planning.md) and [monitoring](spending-monitoring.md).
 
-Transaction categories match configured categories ignoring case. Unmatched costs are shown separately and remain included in total spending. Custom budget categories are available in Add Expense. Changing a budget's category name does not rename historical transactions, so existing expenses may appear as unbudgeted.
+## UI and persistence details
 
-Review my budget with AI opens Chat and sends a request with `review_budget: {year, month}`. The backend reads that user's saved budget and recorded spending. The model is instructed to review affordability and missing costs and give advice. Expense/income proposals and financial-plan extraction are disabled for review requests. Budget changes require the user to edit, review and save them manually.
+Open Budget Tracker from Home/Spending. Select category tiles, enter monthly amounts, or add a custom category; review total allocations and remaining income before saving. Setup accepts 1-50 categories, printable names up to 40 characters, nonnegative two-decimal amounts and income in one transaction. Names are unique ignoring case.
 
-Budgets apply to one calendar month. A new month requires a new setup; budgets are not automatically copied. The form preserves the current month's saved amounts while editing. AI review requires a configured Ollama service and still needs live quality checks.
+Version-2 category amounts occupy the existing budget JSON field; this is not a new database table. Historical transaction categories are not renamed when a target label changes. Matching is case-insensitive; unmatched costs remain in totals and appear unbudgeted. Budgets are month-specific and are not automatically copied into a new month.
+
+Review my budget with AI sends a specific review period and saved facts. That mode suppresses action/profiling writes; an explanation alone does not change the budget. Explicit monitoring-adjustment acceptance is a separate workflow.

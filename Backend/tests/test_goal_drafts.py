@@ -36,7 +36,7 @@ def test_chosen_monthly_amount_produces_reviewable_draft():
     assert draft_plan({**PROFILE,'goal':None},budget,date(2026,10,15)) is None
 
 
-def test_restored_chat_preserves_model_reply_and_shows_unsaved_draft(api_client,monkeypatch,db_session):
+def test_restored_chat_describes_verified_unsaved_draft(api_client,monkeypatch,db_session):
     headers=auth(api_client); setup(api_client,headers)
     calls=[]
     answer="Sure, let's take it at your pace. Would 670 AED each month work for you?"
@@ -48,7 +48,9 @@ def test_restored_chat_preserves_model_reply_and_shows_unsaved_draft(api_client,
         {'role':'user','content':'I want to buy an iPhone for 5000.'},
         {'role':'assistant','content':'How much per month?'},
         {'role':'user','content':'Lets go with 670 per month.'}]}).json()
-    assert len(calls)==1 and response['reply']==answer
+    assert len(calls)==1
+    assert "draft iPhone" in response["reply"] and "AED 670.00" in response["reply"]
+    assert "Nothing has been saved" in response["reply"]
     # The model's own extraction yields a verified draft for review; nothing is saved.
     assert response['plan']['ready'] and response['plan']['budgetGoalSource'] and 'id' not in response['plan']
     assert 'Recover explicit goal facts from prior USER messages' not in calls[0][0]['content']

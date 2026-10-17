@@ -1,13 +1,9 @@
-# Actual debt payments
+# Debt payment ledger
 
-Debt now provides Record payment for each saved debt: positive selected-currency amount and actual payment date (YYYY-MM-DD, no future dates). Values are stored in AED cents. Payment history supports removal to correct mistakes. Loan balances and estimated installments remain separate; recording a payment does not change principal or create an expense transaction.
+`POST /debts/{debt_id}/payments` creates a user-owned payment with an idempotency request key. Future payment dates are rejected. Applied payments reduce the debt's remaining total due. Listing and deletion use `/debts/payments`; deleting an applied payment restores the corresponding outstanding amount.
 
-Savings reads the authenticated user's payments within the selected calendar month. Confirmation calculates income minus spending minus actual debt payments under the SQLite write lock. The displayed payment total is checked on confirmation; changed payments require refresh. Existing confirmed snapshots stay unchanged until explicitly updated. The historical extra_debt_cents storage column now holds the confirmed actual payment deduction; old snapshots are preserved. The legacy extra_debt_payments request field remains validated for older clients but no longer controls deductions.
+The ledger is separate from transactions. Spending/savings services account for paid debt explicitly; the backend does not insert a duplicate expense transaction. A user manually entering the same payment as an unrelated expense can still double-count it, so keep these records distinct.
 
-Existing databases: stop the backend and run `./venv/Scripts/python.exe migrate_debt_payments.py` from Backend. The additive migration backs up first and preserves existing records; rerunning is safe. New databases register the payment model through models/__init__.py and init_db.py.
+Automatic debt synchronization uses unique due occurrences and caps the month's payment after manual entries and the remaining balance. Deleted automatic occurrences are not recreated merely by refreshing. Debt deletion preserves payment history for past-month reporting. This is bookkeeping, not an actual lender payment.
 
-Authenticated GET /debts/payments lists owner-only history, POST /debts/{id}/payments records an owned loan's payment with an owner-scoped UUID retry key, and DELETE /debts/payments/{id} removes it. Payment history retains the loan's name even if the loan is deleted. Reusing a retry key with different facts is rejected.
-
-Double-counting against expenses is intentionally deferred: a payment separately entered as an expense is currently deducted twice. Current-month estimates and completed-month confirmation behavior remain unchanged pending the next discussion.
-
-Validation: full backend suite 402 passed; Mobile TypeScript and Git whitespace checks passed. Local additive migration completed with a database backup. Actual phone and Chrome layout remain unverified. Mobile has no configured lint script.
+See [debt calculations](debts.md), [budget targets](user-budgets.md) and [month-end savings](savings.md).
