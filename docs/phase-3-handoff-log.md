@@ -1,5 +1,7 @@
 > Historical handoff record. Earlier status and test counts may be superseded. Use the [current documentation index](README.md) for current behavior.
 
+> Current implementation note: earlier claims about local-only rejection, missing draft persistence, placeholder screens or test totals describe their historical milestone. Current AI proposals/reviews have durable status and expiry; setup requires the plan-review migration. See [AI lifecycle](budget-goal-chat.md), [Financial Plans](financial-planning.md), [database](database.md) and [testing](testing.md).
+
 # PocketPilot phase 3 handoff log
 
 This phase begins on 14 October 2026 after the Phase 2 handoff for commit b92ef5b, on feature/karim-planning-review. Add implementation, setup, verification and limitations here for the next developer handoff. Entries describe local work and do not imply commit, push or merge. The previously delivered Phase 2 Word document remains unchanged.

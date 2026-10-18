@@ -156,8 +156,9 @@ def financial_context(db, user_id):
     tables = inspect(db.get_bind())
     debt_rows = db.query(Debt).filter_by(user_id=user_id).all() if tables.has_table("debts") else None
     debts = None if debt_rows is None else [
-        {"name": row.name, "amount": data["total_left_to_pay"],
-         "monthlyContribution": data["estimated_monthly_payment"],
+        {"id": row.id, "name": row.name, "balance": data["balance"],
+         "annual_rate": data["annual_rate"], "remaining_months": data["remaining_months"],
+         "amount": data["total_left_to_pay"], "monthlyContribution": data["estimated_monthly_payment"],
          "next_due": data["next_due"]}
         for row in debt_rows for data in [serialize(row, db)]]
     manual = (db.query(ManualSavings).filter_by(user_id=user_id).all() if assignable(db) else None)

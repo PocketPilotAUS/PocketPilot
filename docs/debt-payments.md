@@ -7,3 +7,7 @@ The ledger is separate from transactions. Spending/savings services account for 
 Automatic debt synchronization uses unique due occurrences and caps the month's payment after manual entries and the remaining balance. Deleted automatic occurrences are not recreated merely by refreshing. Debt deletion preserves payment history for past-month reporting. This is bookkeeping, not an actual lender payment.
 
 See [debt calculations](debts.md), [budget targets](user-budgets.md) and [month-end savings](savings.md).
+
+## Planning is not payment
+
+AI repayment advice and Financial Plan acceptance never call the payment-recording operation. An optional accepted extra Debt target is an allocation, not a payment. Recording/deleting an actual payment still uses the dedicated owned debt ledger controls; generic Yes or conversational confirm cannot perform it.

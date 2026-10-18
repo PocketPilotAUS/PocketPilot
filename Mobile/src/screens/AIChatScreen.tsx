@@ -74,11 +74,11 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onS
 
       const data: { status: Proposal["status"] } = await response.json();
 
-      if (mounted.current) {
-        onMessagesChange(messages.map((message) =>
-          message.proposal?.id === id ? { ...message, proposal: { ...message.proposal, status: data.status } } : message
-        ));
-      }
+      // Chat state belongs to the app: keep persisted status after tab navigation.
+      // Matching by ID also prevents an old response from restoring a cleared chat.
+      onMessagesChange(current => current.map((message) =>
+        message.proposal?.id === id ? { ...message, proposal: { ...message.proposal, status: data.status } } : message
+      ));
     } catch (err) {
       if (mounted.current && !(err instanceof SessionExpiredError)) {
         setError({ title: "Couldn't update this record", message: "Please try again.", retry: false });
@@ -133,14 +133,14 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onS
             void session.send(prompt, undefined, choice);
           }} />}
           {!proposal && message.planningProfile && !message.goalPlanning && !message.plan?.ready && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
-          {!proposal && message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan || message.plan?.debtGoalSource && item.debtState && item.debtPhase !== "review")}
-            saving={session.savingPlan === index}
+          {!proposal && message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined || message.plan.reviewStatus === "rejected" || message.plan.reviewStatus === "expired"} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan || message.plan?.debtGoalSource && item.debtState && item.debtPhase !== "review")}
+            saving={session.savingPlan === index && session.rejectingPlan !== index}
             onConfirm={() => {
               if (message.plan!.debtGoalSource) setBudgetApplyChoice({ plan: message.plan!, index });
               else { void session.saveFinancialPlan(message.plan!, index); }
             }}
             onEdit={() => { if (message.plan!.budgetGoalSource) { setEditingGoal(message.plan!); } else { onReviewProfile(message.plan!.profile); } }}
-            onDecline={() => { onMessagesChange(current => current.map((item, i) => i === index ? { ...item, planDeclined: true } : item)); }} />}
+            onDecline={() => { void session.rejectFinancialPlan(message.plan!, index); }} />}
           {proposal && (
             <ProposalCard
               proposal={proposal}

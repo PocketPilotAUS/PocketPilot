@@ -16,6 +16,7 @@ from app.dependencies import CurrentUser
 from app.models.financial_plan import PlanningProfile, FinancialPlan
 from app.schemas.planning import PlanningInput
 from app.services.planning import planning_context, evaluate
+from app.services.plan_confirmations import register as register_review, checked_budget, guard as review_guard, acquire as acquire_review, run_acceptance
 from app.services.goal_savings import assignable, contributions, with_progress
 from app.models.savings import ManualSavings
 
@@ -47,12 +48,12 @@ def profile(body: PlanningInput, current_user: CurrentUser, db: Session = Depend
     result = calculate(body, db, current_user.id)
     save_profile(db, current_user.id, body)
     db.commit()
-    return result
+    return register_review(db,current_user.id,result)
 
 
 @router.post("/preview")
 def preview(body: PlanningInput, current_user: CurrentUser, db: Session = Depends(get_db)):
-    return calculate(body, db, current_user.id)
+    return register_review(db,current_user.id,calculate(body, db, current_user.id))
 
 
 @router.get("/plans")
@@ -62,11 +63,13 @@ def plans(current_user: CurrentUser, db: Session = Depends(get_db)):
             for row in db.query(FinancialPlan).filter_by(user_id=current_user.id).order_by(FinancialPlan.id).all()]
 
 
-def persist(body, db, user_id, row=None):
+def persist(body, db, user_id, row=None, confirmation_key=None):
     result = calculate(body, db, user_id)
     if not result["ready"]:
         raise HTTPException(422, "Complete the household, goal and monthly expenses first")
     result["createdOn"] = date.today().isoformat()
+    if confirmation_key:
+        result["confirmationKey"] = confirmation_key
     if row is None:
         row = FinancialPlan(id=str(uuid4()), user_id=user_id)
         db.add(row)
@@ -150,6 +153,8 @@ def preview_debt_goal(body: DebtGoalPreview, current_user: CurrentUser, db: Sess
     # A saved plan remains editable after its original review token expires.
     # Only the authenticated owner with the exact stored token may refresh it.
     values = unseal(body.token, current_user.id, 'debt_draft', allow_expired=body.plan_id is not None)
+    if body.plan_id is None:
+        review_guard(db,current_user.id,values['key'],allow_legacy=True)
     budget = debt_goal_basis(db, current_user.id, today)
     data = snapshot(db, current_user.id, budget, today, values['debt_ids'], body.plan_id)
     deadline = body.deadline.isoformat() if body.deadline else values['deadline']
@@ -159,12 +164,16 @@ def preview_debt_goal(body: DebtGoalPreview, current_user: CurrentUser, db: Sess
         raise HTTPException(422, 'Choose a future deadline and a total monthly payment that fits your saved budget.')
     if body.monthly_payment is not None and body.monthly_payment < Decimal(str(data['regular'])):
         raise HTTPException(422, 'Keep making at least your required monthly payments.')
-    return draft(data, result, budget, today, current_user.id, {'chosen': chosen}, body.plan_id)
+    return register_review(db,current_user.id,draft(data, result, budget, today, current_user.id, {'chosen': chosen}, body.plan_id))
 
 
 def persist_debt_goal(body, user_id, db, existing=None):
     from app.services.debt_planning import unseal, seal, snapshot, scenario, draft
     values = unseal(body.token, user_id, 'debt_draft')
+    review = review_guard(db,user_id,values['key'])
+    if review and json.loads(review.payload)['plan'].get('debtConfirmation') != body.token:
+        raise HTTPException(409,'This debt review does not match the acceptance token')
+    acquire_review(db,user_id,values['key'])
     key = values['key']
     existing_id = existing.id if existing else None
     if values.get('replace_id') != existing_id:
@@ -218,7 +227,7 @@ def confirm_debt_goal(body: DebtGoalSave, current_user: CurrentUser, db: Session
     if db.get_bind().dialect.name == 'sqlite':
         from sqlalchemy import text
         db.execute(text('BEGIN IMMEDIATE'))
-    return persist_debt_goal(body, current_user.id, db)
+    return run_acceptance(db,lambda: persist_debt_goal(body, current_user.id, db))
 
 
 @router.put('/debt-plans/{plan_id}')
@@ -230,10 +239,17 @@ def update_debt_goal(plan_id: str, body: DebtGoalSave, current_user: CurrentUser
     row = owned(db, current_user.id, plan_id)
     if not json.loads(row.payload).get('debtGoalSource'):
         raise HTTPException(422, 'Choose a debt repayment plan.')
-    return persist_debt_goal(body, current_user.id, db, row)
+    return run_acceptance(db,lambda: persist_debt_goal(body, current_user.id, db, row))
 
 
 def persist_budget_goal(body, user_id, db, existing=None):
+    reviewed=checked_budget(db,user_id,body)
+    if reviewed.status=="saved":
+        from app.services.plan_confirmations import saved_plan
+        saved=saved_plan(db,reviewed)
+        if saved.id!=(existing.id if existing else str(body.request_key)):
+            raise HTTPException(409,"This review was already used for another Financial Plan.")
+        return dict(json.loads(saved.payload),id=saved.id)
     today = datetime.now(timezone(timedelta(hours=4))).date()
     request_key = str(body.request_key)
     facts = json.dumps({"profile": body.profile.model_dump(mode="json"), "choices": body.choices.model_dump(mode="json"), "budget": body.budget_fingerprint}, sort_keys=True)
@@ -280,7 +296,7 @@ def confirm_budget_plan(body: BudgetGoalSave, current_user: CurrentUser, db: Ses
     if db.get_bind().dialect.name == "sqlite":
         from sqlalchemy import text
         db.execute(text("BEGIN IMMEDIATE"))
-    return progress(db, user_id, persist_budget_goal(body, user_id, db))
+    return run_acceptance(db,lambda: progress(db, user_id, persist_budget_goal(body, user_id, db)))
 
 
 @router.put("/budget-plans/{plan_id}")
@@ -293,11 +309,15 @@ def update_budget_goal(plan_id: str, body: BudgetGoalSave, current_user: Current
     row = owned(db, user_id, plan_id)
     if not json.loads(row.payload).get("budgetGoalSource"):
         raise HTTPException(422, "Use the regular editor for this plan.")
-    return progress(db, user_id, persist_budget_goal(body, user_id, db, row))
+    return run_acceptance(db,lambda: progress(db, user_id, persist_budget_goal(body, user_id, db, row)))
 
 
 @router.post("/budget-plans/preview")
 def preview_budget_goal(body: BudgetGoalSave, current_user: CurrentUser, db: Session = Depends(get_db)):
+    from app.models.plan_review import PlanReview
+    if db.get(PlanReview,str(body.request_key)):
+        review_guard(db,current_user.id,str(body.request_key))
+
     today = datetime.now(timezone(timedelta(hours=4))).date()
     income = db.query(MonthlyIncome).filter_by(user_id=current_user.id, year=today.year, month=today.month).first()
     amount = Decimal(income.amount_cents) / 100 if income else None
@@ -311,7 +331,7 @@ def preview_budget_goal(body: BudgetGoalSave, current_user: CurrentUser, db: Ses
     result = draft_plan(body.profile.model_dump(mode="json"), budget, today, choices)
     if result is None:
         raise HTTPException(422, "Choose a complete goal and an affordable monthly amount or future deadline.")
-    return result
+    return register_review(db,current_user.id,result)
 
 
 # Spending monitoring and AI budget adjustments for the current month
@@ -443,3 +463,66 @@ def accept_adjustment(body: AdjustmentAccept, current_user: CurrentUser, db: Ses
     row.percentages = json.dumps(payload)
     db.commit()
     return spending_status_view(current_user, db)
+
+
+
+def review_transaction(db):
+    db.commit()
+    if db.get_bind().dialect.name=="sqlite":
+        from sqlalchemy import text
+        db.execute(text("BEGIN IMMEDIATE"))
+
+
+class ReviewAccept(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    plan_id: str | None = Field(default=None,max_length=36)
+    apply_to_budget: bool | None = Field(default=None,strict=True)
+
+
+@router.post("/reviews/{review_id}/reject")
+def reject_review(review_id:str,current_user:CurrentUser,db:Session=Depends(get_db)):
+    from app.services.plan_confirmations import reject
+    review_transaction(db)
+    return reject(db,current_user.id,review_id)
+
+
+@router.post("/reviews/{review_id}/accept")
+def accept_review(review_id:str,body:ReviewAccept,current_user:CurrentUser,db:Session=Depends(get_db)):
+    return run_acceptance(db,lambda: accept_review_work(review_id,body,current_user,db))
+
+
+def accept_review_work(review_id,body,current_user,db):
+    from app.services.plan_confirmations import saved_plan
+    from app.models.plan_review import PlanReview
+    review_transaction(db)
+    row=review_guard(db,current_user.id,review_id)
+    data=json.loads(row.payload)["plan"]
+    previous=saved_plan(db,row)
+    if previous:
+        if body.plan_id is not None and body.plan_id != previous.id:
+            raise HTTPException(409,"This review was already used for another Financial Plan.")
+        if data.get("debtGoalSource") and body.apply_to_budget is not None and bool(json.loads(previous.payload).get("budgetApplied"))!=body.apply_to_budget:
+            raise HTTPException(409,"This plan was already saved with a different budget choice")
+        return dict(json.loads(previous.payload),id=previous.id,reviewId=review_id,reviewStatus="saved")
+    if body.plan_id is not None and data.get("budgetGoalSource"):
+        raise HTTPException(422,"Use the verified budget or debt editor for this plan.")
+    target = owned(db,current_user.id,body.plan_id) if body.plan_id else None
+    acquire_review(db,current_user.id,review_id)
+    if data.get("debtGoalSource"):
+        result=persist_debt_goal(DebtGoalSave(token=data["debtConfirmation"],apply_to_budget=body.apply_to_budget),current_user.id,db)
+    elif data.get("budgetGoalSource"):
+        request=BudgetGoalSave(profile=data["profile"],choices=data.get("budgetChoices",{}),budget_fingerprint=data["budgetFingerprint"],request_key=data["confirmationKey"])
+        result=persist_budget_goal(request,current_user.id,db)
+    else:
+        profile=PlanningInput.model_validate(data["profile"])
+        verified=calculate(profile,db,current_user.id)
+        for key in ("income","baselineSpending","monthlyContribution","targetAmount","deadline","allocations"):
+            if verified.get(key)!=data.get(key):
+                raise HTTPException(409,"Your planning context changed. Review a new plan.")
+        if target is None:
+            target=FinancialPlan(id=review_id,user_id=current_user.id)
+            db.add(target)
+        result=persist(profile,db,current_user.id,target,review_id)
+    db.query(PlanReview).filter(PlanReview.id==review_id,PlanReview.user_id==current_user.id,PlanReview.status.in_(("pending","accepting"))).update({"status":"saved"})
+    db.commit()
+    return progress(db,current_user.id,dict(result,reviewId=review_id,reviewStatus="saved"))

@@ -24,8 +24,14 @@ function PlanSummary({ plan }: { plan: FinancialPlan }) {
       {plan.debtGoalSource && plan.estimatedInterestSaved != null && metric("Estimated interest saved", formatAED(plan.estimatedInterestSaved))}
       {plan.months != null && metric("Months", String(plan.months))}
       {plan.deadline && metric("Target date", formatPlanningDate(plan.deadline))}
-      {metric("Left after goal", formatAED(plan.debtGoalSource ? plan.leftAfterGoal ?? 0 : plan.availableAfter))}
+      {plan.debtGoalSource
+        ? metric("Remaining after extra repayment", formatAED(plan.leftAfterGoal ?? 0))
+        : <>
+          {metric("Available before monthly savings", formatAED(plan.availableAfter))}
+          {plan.remainingAfterSavings != null && metric("Remaining after monthly savings", formatAED(plan.remainingAfterSavings))}
+        </>}
     </View>
+    {!plan.debtGoalSource && <Text style={p.caption}>Planned monthly figures include listed loan obligations. This is not a bank balance or recorded savings.</Text>}
     {plan.debtGoalSource && plan.estimatedInterestSaved != null && <Text style={p.caption}>Fixed-rate estimate; fees and lender-specific adjustments are excluded.</Text>}
   </View>;
 }
@@ -35,8 +41,8 @@ export default function PlanConfirmationActions({ plan, dismissed, busy, saving 
   const { styles: s } = useDashboardTheme();
   if (!plan.ready) return null;
   const summary = plan.budgetGoalSource ? <PlanSummary plan={plan} /> : null;
-  if (plan.id) return <View>{summary}<Text style={s.heroHint}>Plan saved. Find it in My Financial Plans.</Text></View>;
-  if (dismissed) return <View>{summary}<Text style={s.heroHint}>Plan rejected. Nothing was saved.</Text></View>;
+  if (plan.id || plan.reviewStatus === "saved") return <View>{summary}<Text style={s.heroHint}>{plan.id ? "Plan saved. Find it in My Financial Plans." : "Plan was already accepted. Create a new plan if needed."}</Text></View>;
+  if (dismissed) return <View>{summary}<Text style={s.heroHint}>{plan.reviewStatus === "expired" ? "Plan expired. Create a new plan." : "Plan rejected. Nothing was saved."}</Text></View>;
   return <View>
     {summary}
     <Text style={s.heroHint}>Not saved yet. Accept to save it to My Financial Plans.</Text>

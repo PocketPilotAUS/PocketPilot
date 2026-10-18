@@ -1,6 +1,6 @@
 # PocketPilot developer documentation
 
-These guides describe the current source. Historical handoff logs are retained as records, not current specifications.
+These guides describe the current source on fix/ai-natural-language. Start with the root README for complete Windows setup; database/migration directories retain their existing layout. Historical handoff logs are retained as records, not current specifications.
 
 | Topic | Guide |
 | --- | --- |
@@ -23,3 +23,5 @@ These guides describe the current source. Historical handoff logs are retained a
 | Validation | [Testing](testing.md) |
 
 Historical records: [phase 2](phase-2-handoff-log.md), [phase 3](phase-3-handoff-log.md). Start installation from the [root README](../README.md).
+
+Current confirmation safety uses separate transaction and Financial Plan registries. See [AI Chat](budget-goal-chat.md), [Financial Plans](financial-planning.md), and the required [review-table setup](database.md). The owner reports planned physical-device C1?C7 tests passed; [testing](testing.md) distinguishes that report from mocked and live automated evidence.

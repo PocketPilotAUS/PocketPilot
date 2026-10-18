@@ -2,11 +2,11 @@
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
 MONEY_KEYS = {
-    "amount", "income", "other_income", "target_amount", "current_amount", "current_income",
+    "balance", "amount", "income", "other_income", "target_amount", "current_amount", "current_income",
     "average", "tolerance", "suggested_target", "increase", "extra_commitments", "available_for_increases",
     "proposed_total", "total_increase", "remaining_after_proposal", "required_contributions",
     "monthly_contribution", "spent", "remaining", "planned_total", "planned_remaining", "target", "baseline",
-    "baselineSpending", "availableBefore", "availableAfter", "requiredMonthly", "monthlyContribution",
+    "baselineSpending", "availableBefore", "availableAfter", "remainingAfterSavings", "requiredMonthly", "monthlyContribution",
     "unfundedMonthly", "targetAmount", "savedAmount", "monthlyAmount", "historicalMonthly",
     "plannedMonthly", "difference", "overBy", "total_spending", "scenarioAvailable", "scenarioUnfunded",
 }
@@ -47,3 +47,36 @@ def base_patch(value, rate):
         result["expenses"] = {key: None if amount is None else money(amount, Decimal(1) / rate)
                               for key, amount in result["expenses"].items()}
     return result
+
+
+def format_reply_currency(text, currency="AED", source_text=""):
+    """Normalize presentation only: keep values and explicit foreign labels intact.
+
+    Bare dollar glyphs emitted for app figures use the selected display currency;
+    an attached explicit currency label wins. This never performs conversion.
+    """
+    import re
+    symbol_currency = "USD" if re.search(r"\b(?:USD|dollars?)\b|\$", source_text, re.I) else currency
+    number = r"-?\d[\d,]*(?:\.\d+)?"
+    labels = r"AED|CNY|USD|EUR|GBP"
+    pattern = (rf"(?:(?P<prefix>\b(?:{labels}))\s*)?\$\s*(?P<number>{number})"
+               rf"(?:\s*(?:\((?P<paren>{labels})\)|(?P<suffix>{labels})\b))?")
+    def replace(match):
+        label = match["prefix"] or match["paren"] or match["suffix"] or symbol_currency
+        return f"{label.upper()} {match['number']}"
+    text = re.sub(pattern, replace, text, flags=re.I)
+    text = re.sub(rf"\b({labels})\s+({number})\s*\(\1\)", r"\1 \2", text, flags=re.I)
+    return text
+
+
+def format_model_reply(raw, currency, source_text=""):
+    """Normalize only the human-readable field, never structured financial data."""
+    import json
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        return raw
+    if isinstance(value, dict) and isinstance(value.get("reply"), str):
+        value["reply"] = format_reply_currency(value["reply"], currency, source_text)
+        return json.dumps(value)
+    return raw

@@ -1,12 +1,13 @@
 from app.routers.recurring import sync_recurring
 from app.services.planning import planning_context, evaluate
+from app.services.chat_savings import grounded as grounded_savings, affordability as savings_affordability
 from app.services.chat_context import intent, supports_action, financial_context, current_budget_answer
 from app.services.chat_records import normalize_action, pending_reply, unsupported_operation
 from app.schemas.planning import PlanningInput
 from app.core.languages import LanguageCode, LANGUAGE_NAMES
 import json
 from decimal import Decimal
-from app.core.currency import display_context, base_patch
+from app.core.currency import display_context, base_patch, format_reply_currency, format_model_reply
 import re
 from datetime import date, datetime, timedelta, timezone
 from app.services.budget_goals import assess as assess_budget_goal, fingerprint as budget_fingerprint, draft_plan as budget_goal_draft
@@ -19,7 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import httpx
-from app.ai.client import generate_chat_reply, extract_goal_facts, IncompleteAnswerError
+from app.ai.client import generate_chat_reply, extract_goal_facts, interpret_chat_turn, IncompleteAnswerError
 from app.database import get_db
 from app.dependencies import CurrentUser
 from app.models.transaction import Transaction
@@ -79,6 +80,10 @@ class ChatRequest(BaseModel):
     resume_budget_goal: bool = False
     budget_choices: BudgetChoices | None = None
     debt_state: str | None = Field(default=None, max_length=16000)
+    record_state: str | None = Field(default=None, max_length=50000)
+    active_proposal_id: str | None = Field(default=None, max_length=36)
+    proposal_ids: list[str] = Field(default_factory=list, max_length=100)
+    plan_review_ids: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def validate_conversation(self):
@@ -97,6 +102,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     proposal: dict | None = None
+    proposal_updates: list[dict] = Field(default_factory=list)
+    plan_updates: list[dict] = Field(default_factory=list)
     plan: dict | None = None
     planning_profile: dict | None = None
     goal_planning: bool = False
@@ -104,6 +111,7 @@ class ChatResponse(BaseModel):
     budget_goal: dict | None = None
     debt_state: str | None = None
     debt_phase: str | None = None
+    record_state: str | None = None
 
 
 def verified_goal_draft(profile, budget, today, choices, presented_fingerprint):
@@ -178,6 +186,37 @@ def unverified_goal_claim(raw):
         r"|\b(?:surplus|available this month|entire amount this month)\b.{0,70}\b(?:available this month|entire amount this month)\b", text, re.I))
 
 
+def unverified_goal_amounts(raw, context, messages=()):
+    """Currency-tagged advice must use user facts or server-calculated figures."""
+    try:
+        payload = json.loads(raw)
+        text = payload.get("reply", "") if isinstance(payload, dict) else raw
+    except (ValueError, TypeError):
+        text = raw
+    if not isinstance(text, str):
+        return False
+    from app.services.chat_interpretation import stated_amounts
+    allowed = {value.quantize(Decimal(".01")) for value in stated_amounts(messages)}
+    def collect(value):
+        if isinstance(value, dict):
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+        elif isinstance(value, (int, float, Decimal, str)) and not isinstance(value, bool):
+            try:
+                allowed.add(Decimal(str(value)).quantize(Decimal(".01")))
+            except ArithmeticError:
+                pass
+    collect(context)
+    number = r"(-?\d[\d,]*(?:\.\d+)?)"
+    for prefix, suffix in re.findall(r"\b(?:AED|CNY)\s*" + number + "|" + number + r"\s*(?:AED|CNY)\b", text, re.I):
+        if Decimal((prefix or suffix).replace(",", "")).quantize(Decimal(".01")) not in allowed:
+            return True
+    return False
+
+
 def reconcile_reply(reply, plan, body):
     """A returned draft is pending regardless of the model's narrative."""
     if not plan or not plan.get("ready") or plan.get("id") or not plan.get("deadline"):
@@ -204,16 +243,12 @@ def ai_goal_facts(body, today):
         return {}, None
     if not isinstance(raw, dict):
         return {}, None
+    raw = grounded_savings(raw, body.messages, today)
     raw = {key: value for key, value in raw.items() if value is not None and key in {"goal", "goal_kind", "target_amount", "current_amount", "monthly_contribution", "deadline", "deadline_in_months"}}
     # Keep only figures the user actually wrote, so a small model cannot
     # introduce an amount or date of its own.
-    user_text = " ".join(message.content for message in body.messages if message.role == "user")
-    stated = set()
-    for number, thousands in re.findall(r"(\d[\d,]*(?:\.\d+)?)\s*(k\b)?", user_text, re.I):
-        try:
-            stated.add(Decimal(number.replace(",", "")) * (1000 if thousands else 1))
-        except ArithmeticError:
-            pass
+    from app.services.chat_interpretation import stated_amounts
+    stated = stated_amounts(body.messages)
     for key in ("target_amount", "current_amount", "monthly_contribution"):
         try:
             if key in raw and Decimal(str(raw[key])) not in stated:
@@ -234,21 +269,214 @@ def ai_goal_facts(body, today):
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get_db)):
+    result = chat_turn(body, current_user, db)
+    from app.services.plan_confirmations import register
+    result.plan = register(db, current_user.id, result.plan)
+    result.reply = format_reply_currency(result.reply, body.currency, body.messages[-1].content)
+    return result
+
+
+def chat_turn(body, current_user, db):
     sync_recurring(db, current_user.id)
     today = datetime.now(timezone(timedelta(hours=4))).date()
-    request_intent = intent(body.messages)
+    from app.services.chat_interpretation import ChatInterpretation
+    from app.services.chat_record_drafts import load_draft, complete_field, date_answer
+    from app.services.chat_expenses import extract_draft, respond as expense_response
+    from app.services.chat_income import extract_draft as extract_income, respond as income_response, scenario as income_scenario
+    from app.routers.proposals import owned_proposal, dismiss_proposal
+    active_proposal = owned_proposal(db, current_user.id, body.active_proposal_id) if body.active_proposal_id else None
+    from app.models.chat_proposal import ChatProposal
+    proposal_ids = list(dict.fromkeys([*body.proposal_ids, *([body.active_proposal_id] if body.active_proposal_id else [])]))
+    if any(len(key) > 36 for key in proposal_ids):
+        raise HTTPException(422, "Invalid proposal reference")
+    proposal_history = db.query(ChatProposal).filter(ChatProposal.user_id == current_user.id,
+        ChatProposal.id.in_(proposal_ids)).all() if proposal_ids else []
+    if len(proposal_history) != len(proposal_ids):
+        raise HTTPException(404, "Proposal not found")
+    from app.services.plan_confirmations import owned as owned_review, status as review_status
+    plan_history = [owned_review(db,current_user.id,key) for key in dict.fromkeys(body.plan_review_ids)]
+    for row in plan_history:
+        review_status(db,row)
+    record_draft = load_draft(body.record_state, current_user.id, db)
+    from app.services.chat_context import _user_text
+    latest_text = _user_text(body.messages[-1].content).strip()
+    if len(body.messages) >= 3 and body.messages[-2].content.startswith(("Okay, I've canceled that ", "That record is canceled.")) and (
+            re.fullmatch(r"(?:yes|yep|yeah|okay|ok|sure)[.! ]*", latest_text, re.I) or date_answer(latest_text, today) is not None):
+        return ChatResponse(reply="That record is canceled. Nothing was saved. Tell me the details if you want to start a new record.")
+    from app.services.chat_followups import acknowledgment, has_explicit_question
+    is_acknowledgment = acknowledgment(latest_text)
+    explicit_question = has_explicit_question(body.messages)
+    if is_acknowledgment and active_proposal and not record_draft and not explicit_question:
+        from app.services.chat_proposal_replies import proposal_acknowledgment
+        return ChatResponse(**proposal_acknowledgment(db, current_user.id, active_proposal, body.currency, body.aed_to_cny))
+    if is_acknowledgment and not explicit_question and not record_draft:
+        return ChatResponse(reply="What would you like me to help with? Nothing has been saved.")
+    if record_draft and not body.review_budget:
+        completed = complete_field(record_draft, body.messages[-1].content, today)
+        if completed is not None:
+            result = (income_response(completed, db, current_user.id, body.currency, body.aed_to_cny, body.messages[-1].content, today)
+                      if completed.kind == "income" else expense_response(completed, db, current_user.id, body.currency, body.aed_to_cny, body.messages[-1].content))
+            return ChatResponse(**result)
+    from app.services.chat_followups import standalone_amount, planning_amount_workflow
+    from app.services.chat_record_drafts import numeric_value
+    number_token = standalone_amount(body.messages[-1].content)
+    amount_workflow = None
+    numeric_goal_patch = None
+    if number_token is not None:
+        if numeric_value(number_token) > 1_000_000_000:
+            return ChatResponse(reply="That amount is outside the supported range. What amount did you mean?")
+        explicit_currency = re.search(r"\b(AED|CNY)\b", _user_text(body.messages[-1].content), re.I)
+        amount_currency = explicit_currency.group(1).upper() if explicit_currency else body.currency
+        amount_workflow = (planning_amount_workflow(body, current_user.id, today)
+            if numeric_value(number_token) > 0 and amount_currency == body.currency else None)
+        if amount_workflow is None:
+            return ChatResponse(reply=f"What does {amount_currency} {numeric_value(number_token):,.2f} refer to?",
+                record_state=body.record_state if record_draft else None)
+        if amount_workflow[0] == "savings":
+            numeric_goal_patch = {amount_workflow[1]: str(numeric_value(number_token))}
+    semantic = None
+    try:
+        semantic = ChatInterpretation.model_validate_json(interpret_chat_turn(
+            [message.model_dump() for message in body.messages],
+            {"goal": grounded_savings(
+                display_context(body.planning_profile.model_dump(mode="json"), body.aed_to_cny) if body.currency == "CNY"
+                else body.planning_profile.model_dump(mode="json"), body.messages, today) if body.planning_profile else None,
+             "debt_conversation": bool(body.debt_state), "currency": body.currency,
+             "today": today.isoformat(), "timezone": "Asia/Dubai",
+             "pending_proposal": {"id": active_proposal.id, "status": active_proposal.status, **json.loads(active_proposal.payload)} if active_proposal else None,
+             "plan_history": [{"review_id": row.id, "status": row.status, "plan": json.loads(row.payload)["plan"]} for row in plan_history],
+             "proposal_history": [{"id": row.id, "status": row.status, **json.loads(row.payload)} for row in proposal_history],
+             "pending_record": record_draft.model_context() if record_draft else None,
+             "pending_expense": record_draft.model_context() if record_draft and record_draft.kind == "expense" else None}))
+    except Exception:
+        # Conservative legacy routing remains available on model/schema failure.
+        pass
+    from app.services.plan_confirmations import is_reference, reference
+    if semantic and is_reference(semantic,latest_text,plan_history):
+        return ChatResponse(**reference(db,current_user.id,plan_history,semantic,latest_text,body.currency,body.aed_to_cny))
+    from app.services.chat_proposal_replies import reference_turn, resolve_reference
+    if semantic and reference_turn(semantic, latest_text):
+        return ChatResponse(**resolve_reference(db, current_user.id, proposal_history, semantic,
+            latest_text, body.currency, body.aed_to_cny))
+    if is_acknowledgment and not record_draft and (semantic is None and not (body.debt_state or body.goal_planning) or semantic and semantic.intent == "record"):
+        # An answer to another question can continue that discussion, but never
+        # reopen transaction extraction or mint a second proposal from assent.
+        if active_proposal:
+            from app.services.chat_proposal_replies import proposal_acknowledgment
+            return ChatResponse(**proposal_acknowledgment(db, current_user.id, active_proposal, body.currency, body.aed_to_cny))
+        return ChatResponse(reply="What would you like me to help with? Nothing has been saved.")
+    if amount_workflow is not None:
+        # The current validated workflow, not the model's guessed income intent,
+        # supplies the meaning of a typed monetary answer.
+        semantic = ChatInterpretation(intent="plan", topic=amount_workflow[0], continuation=True,
+            kind=None, amount_text=None, category_text=None, category=None, clarification=None,
+            savings_operation="goal" if amount_workflow[0] == "savings" else None)
+    if semantic and semantic.intent == "record" and proposal_history and not record_draft:
+        # Completed proposals are immutable reviews, not incomplete intake drafts.
+        # Only a signed pending RecordDraft can carry fields across this boundary.
+        semantic = semantic.model_copy(update={"continuation": False})
+    if semantic and semantic.intent == "cancel":
+        from app.services.chat_record_drafts import cancel_draft
+        if record_draft:
+            if semantic.kind is not None and semantic.kind != record_draft.kind:
+                return ChatResponse(reply="Which pending record would you like to cancel?", record_state=body.record_state)
+            cancel_draft(db, record_draft, current_user.id)
+            return ChatResponse(reply=f"Okay, I've canceled that {record_draft.kind}. Nothing was saved.",
+                proposal_updates=[{"id": record_draft.draft_id, "status": "dismissed"}])
+        if proposal_history:
+            from app.services.chat_proposal_replies import reference_candidates, proposal_acknowledgment
+            candidates = reference_candidates(proposal_history, semantic, latest_text, body.currency, body.aed_to_cny)
+            if len(candidates) != 1:
+                return ChatResponse(reply="Which pending proposal would you like to cancel? Please specify its amount and category.")
+            target = candidates[0]
+            from app.routers.proposals import expire_proposal
+            target = expire_proposal(db, current_user.id, target)
+            if target.status in ("dismissed", "expired"):
+                return ChatResponse(**proposal_acknowledgment(db, current_user.id, target, body.currency, body.aed_to_cny))
+            if target.status == "saved":
+                return ChatResponse(reply="That record was already saved, so I cannot cancel it as a pending record. You can manage saved records in the app.",
+                    proposal_updates=[{"id": target.id, "status": "saved"}])
+            kind = json.loads(target.payload).get("kind", semantic.kind or "record")
+            if semantic.kind is not None and kind != semantic.kind:
+                return ChatResponse(reply="Which pending record would you like to cancel?")
+            dismiss_proposal(db, current_user.id, target.id)
+            return ChatResponse(reply=f"Okay, I've canceled that {kind}. Nothing was saved.",
+                proposal_updates=[{"id": target.id, "status": "dismissed"}])
+        return ChatResponse(reply="There is no active pending record to cancel. Nothing has been saved.")
+    if semantic and semantic.intent == "record" and semantic.topic == "debt":
+        # Debt payments use the existing loan-payment operation in Debts, not an
+        # ordinary expense proposal or a repayment planning scenario.
+        return ChatResponse(reply="Record loan payments in the Debts section using the loan's payment controls. Nothing has been saved or applied.")
+    if semantic and semantic.kind == "income":
+        semantic = semantic.model_copy(update={"category": None, "category_text": None})
+        if (record_draft and record_draft.kind == "income" and record_draft.income_operation is None
+                and semantic.intent == "record" and semantic.income_operation is not None
+                and semantic.amount_text in (None, record_draft.amount_text)):
+            # A semantic answer to the pending operation question retains known facts.
+            semantic = semantic.model_copy(update={"continuation": True})
+    if semantic and semantic.intent == "record":
+        from app.services.chat_context import _user_text
+        evidence = _user_text(body.messages[-1].content)
+        if semantic.continuation and record_draft:
+            evidence += " " + record_draft.source
+        elif semantic.continuation and len(body.messages) >= 3:
+            evidence += " " + _user_text(body.messages[-3].content)
+        from app.services.chat_context import WRITE
+        lookup_followup = (semantic.continuation and len(body.messages) >= 3
+                           and intent(body.messages[:-2]) == "read"
+                           and not WRITE.search(body.messages[-1].content))
+        bare_amount = standalone_amount(body.messages[-1].content)
+        if lookup_followup or bare_amount and not semantic.continuation:
+            semantic = semantic.model_copy(update={"intent": "clarify", "clarification": "What does that amount refer to, and would you like to record it?"})
+        savings_context = body.goal_planning or body.planning_profile and body.planning_profile.goal_kind == "savings"
+        if semantic.kind == "income" and savings_context and not re.search(r"\b(?:income|salary|earned|received|paid|pay|wages?)\b", body.messages[-1].content, re.I):
+            semantic = semantic.model_copy(update={"intent": "clarify", "clarification": "Is that a monthly savings contribution or income you received?"})
+        if semantic.category_text and semantic.category_text.casefold() not in evidence.casefold():
+            semantic = semantic.model_copy(update={"intent": "clarify", "clarification": "What is this amount for, and would you like to record it?"})
+    request_intent = semantic.intent if semantic else intent(body.messages)
+    if semantic and request_intent == "record" and intent(body.messages) == "read":
+        # A semantic misclassification cannot turn a recognized lookup into a write.
+        request_intent = "read"
+    if record_draft and (request_intent == "read" or semantic and not semantic.continuation and request_intent in ("record", "plan", "unsupported")):
+        from app.services.chat_record_drafts import cancel_draft
+        cancel_draft(db, record_draft, current_user.id)
+        record_draft = None
+        body = body.model_copy(update={"record_state": None})
+    if semantic and request_intent in ("clarify", "unsupported"):
+        return ChatResponse(reply=semantic.clarification or "What would you like to know or change? Nothing has been saved.",
+            record_state=body.record_state if record_draft and semantic.continuation and request_intent == "clarify" else None)
+    if semantic and request_intent == "record" and semantic.kind == "expense" and not body.review_budget:
+        draft = extract_draft(semantic, body.messages, today, body.currency, body.aed_to_cny,
+                              record_draft if record_draft and record_draft.kind == "expense" and semantic.continuation else None)
+        return ChatResponse(**expense_response(draft, db, current_user.id, body.currency, body.aed_to_cny, body.messages[-1].content))
+    if semantic and request_intent == "record" and semantic.kind == "income" and not body.review_budget:
+        previous = record_draft if record_draft and record_draft.kind == "income" and semantic.continuation else None
+        draft = extract_income(semantic, body.messages, today, body.currency, body.aed_to_cny, previous)
+        return ChatResponse(**income_response(draft, db, current_user.id, body.currency, body.aed_to_cny, body.messages[-1].content, today))
+    if semantic and (request_intent == "read" or not semantic.continuation):
+        body = body.model_copy(update={"planning_profile": None, "goal_planning": False,
+            "debt_state": None, "budget_choices": None, "budget_draft_fingerprint": None,
+            "budget_draft_status": None})
     from app.services.debt_planning import debt_request
     debt_mode = not body.review_budget and (bool(body.debt_state) or request_intent != "record" and debt_request(body.messages))
+    if semantic:
+        debt_mode = not body.review_budget and request_intent == "plan" and semantic.topic == "debt"
     read_only = request_intent == "read"
     period = body.review_budget or BudgetPeriod(year=today.year, month=today.month)
     budget = budget_summary(db, current_user.id, period.year, period.month, include_debt=True)
+    if semantic and semantic.intent == "read" and read_only and semantic.kind == "income" and semantic.income_operation is not None and not body.review_budget:
+        result = income_scenario(semantic, body.messages, budget, body.currency, body.aed_to_cny)
+        if result is not None:
+            return ChatResponse(**result)
+    if semantic and semantic.topic == "savings" and semantic.savings_operation == "affordability" and not body.review_budget:
+        return ChatResponse(**savings_affordability(semantic, body.messages, budget, body.currency, body.aed_to_cny, today))
     if body.review_budget and budget["ideal_budget"] is None:
         raise HTTPException(422, "Create and save your budget before requesting an AI review.")
     needs_budget = budget["ideal_budget"] is None or budget["income"] is None or any(row["target"] is None for row in budget["ideal_budget"]["allocations"])
     if debt_mode and not needs_budget:
         from app.services.debt_planning import turn as debt_turn
         result = debt_turn(db, current_user.id, budget, body.messages, today, body.debt_state,
-                           body.language, body.currency, body.aed_to_cny, body.budget_draft_status)
+                           body.language, body.currency, body.aed_to_cny, body.budget_draft_status, semantic is None)
         if result is not None:
             return ChatResponse(**result)
         debt_mode = False
@@ -261,9 +489,18 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     goal_mode = not debt_mode and request_intent != "record" and not read_only and not body.review_budget and (body.goal_planning or any(
         re.search(r"\b(?:want to save|save for|saving for|savings goal|vacation|holiday|goal deadline|reach my goal)\b|ادخر|إجازة|储蓄目标|度假", message.content, re.I)
         for message in body.messages if message.role == "user"))
+    if semantic:
+        goal_mode = not body.review_budget and request_intent == "plan" and semantic.topic == "savings"
+    # Without a named goal, savings advice remains informational even if a small
+    # model labels "save more" as goal setup. No plan can be produced here.
+    if semantic and goal_mode and semantic.savings_operation == "goal" and not semantic.amount_text and semantic.protected_categories and not body.planning_profile:
+        return ChatResponse(**savings_affordability(semantic, body.messages, budget, body.currency, body.aed_to_cny, today))
     # The AI reads the user's goal facts from the conversation. A goal with an
     # amount is planned against the saved budget wherever it comes up.
-    goal_facts, deadline_problem = ({}, None) if debt_mode or request_intent == "record" or read_only or body.review_budget or needs_budget else ai_goal_facts(body, today)
+    goal_messages = body.messages[-1:] if semantic and not semantic.continuation else body.messages
+    goal_facts, deadline_problem = ({}, None) if debt_mode or request_intent == "record" or read_only or body.review_budget or needs_budget or numeric_goal_patch is not None or semantic and not goal_mode else ai_goal_facts(body.model_copy(update={"messages": goal_messages}), today)
+    if numeric_goal_patch is not None:
+        goal_facts = base_patch(numeric_goal_patch, body.aed_to_cny) if body.currency == "CNY" else numeric_goal_patch
     if goal_facts.get("goal") and goal_facts.get("target_amount") is not None:
         goal_mode = True
     # Mobile chat requires a saved budget independently of how the user phrases
@@ -312,8 +549,22 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     except Exception:
         db.rollback()
     planning = planning_context(db, current_user.id, today)
+    # An account-level saved profile is not the active conversation's goal.
+    # Carry only user-grounded facts from this chat, never cached goal details.
+    saved_profile = planning["profile"]
+    latest_text = body.messages[-1].content.casefold()
+    saved_goal_reference = (saved_profile.get("goal") and str(saved_profile["goal"]).casefold() in latest_text
+                            and re.search(r"\b(?:saved|existing)\b", latest_text))
+    if not saved_goal_reference:
+        planning["profile"] = {key: value for key, value in saved_profile.items()
+                               if key not in {"goal", "goal_kind", "target_amount", "current_amount", "monthly_contribution", "deadline", "deadline_in_months"}}
     if body.planning_profile is not None:
-        planning["profile"] = json.loads(body.planning_profile.model_dump_json())
+        carried = json.loads(body.planning_profile.model_dump_json())
+        if body.currency == "CNY":
+            carried = base_patch(grounded_savings(display_context(carried, body.aed_to_cny), goal_messages, today), body.aed_to_cny)
+        else:
+            carried = grounded_savings(carried, goal_messages, today)
+        planning["profile"] = carried
     try:
         known = dict(planning["profile"])
         if known.get("income") is None and planning["current_income"] is not None:
@@ -342,7 +593,7 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     card = verified_goal_draft(planning["profile"], budget, today, choices, body.budget_draft_fingerprint) if goal_mode else None
     if card is not None:
         context["goal_plan_status"] = "a new verified plan card is shown with this reply, awaiting Accept/Adjust/Reject, NOT saved"
-        context["plan_card"] = {key: card.get(key) for key in ("title", "targetAmount", "savedAmount", "monthlyContribution", "months", "deadline", "availableAfter")}
+        context["plan_card"] = {key: card.get(key) for key in ("title", "targetAmount", "savedAmount", "monthlyContribution", "months", "deadline", "availableAfter", "remainingAfterSavings")}
     if goal_mode and deadline_problem == "past":
         context["deadline_note"] = "The date the user gave for this goal has already passed. Say so kindly and ask for a future date; do not plan with it."
     if body.review_budget:
@@ -369,7 +620,7 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
         "For incomplete details, give a provisional remainder and ask one useful question about missing necessities such as fuel, medical or family costs. "
         "You have no web browsing or subscription-price lookup tool. Explain that actual subscription charges depend on the user's plan; ask their charged total instead of guessing. "
         "Be a supportive but candid coach: evaluate affordability rather than merely repeating expenses. "
-        "Ask the main financial goal, amount and deadline, how many people this income supports, and other household income. "
+        "Answer the current question first. Ask only for details needed for that task, using known context; do not run a general intake questionnaire. "
         "Use past recorded months as reference; ask which are complete and typical before calling them a baseline. "
         "Never label a category excessive solely because it is the largest. Consider dependents, essential costs and user-protected categories. "
         "Explain specific workable cuts and their effect on the goal; flag shortfalls and unrealistic deadlines without shaming. "
@@ -393,6 +644,7 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
          "A stated number of months or years is a valid timeframe: return it as planning.deadline_in_months and the server converts it to the exact date. "
          "Whenever the user states or changes the goal, its target amount or its timeframe, put those facts in planning in that same turn (goal, goal_kind, target_amount, and deadline or deadline_in_months); the plan card is built only from these structured facts. "
          "Once the goal, target and timeframe are known, the app automatically shows a verified plan card with Accept, Adjust and Reject; do not ask whether to create a plan, just point the user to the card in a natural way. "
+         "plan_card.availableAfter is capacity BEFORE this goal contribution; remainingAfterSavings is capacity AFTER it. Never call pre-contribution capacity money left after savings. "
          "If plan_card is in the context, the app shows that verified plan with your reply: describe it naturally with its exact monthly amount, number of months and target date, and invite the user to Accept, Adjust or Reject it; do not ask again for details it already contains. "
          "If deadline_note is in the context, follow it. Contributions start in the current month and include the deadline month; plan_card.months already counts them. "
          "Never calculate amounts, numbers of months or dates yourself; use only figures from the verified assessment. If the newest goal details are not in the assessment yet, describe the plan without figures and say the verified figures are in the plan card. " if goal_mode else "") +
@@ -445,6 +697,10 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     if goal_mode and body.resume_budget_goal:
         system = system.replace("ONLY facts explicitly stated or corrected by the user in this turn", "ONLY goal facts explicitly stated by the user in this conversation, including before budget setup")
         system = "The user has returned from budget setup. Recover their pending goal, target and exact deadline from explicit prior USER messages. Do not ask them to repeat these, and never treat prior assistant suggestions as agreed facts.\n" + system
+    if semantic:
+        system = ("Semantic interpretation of the current task (data): " + semantic.model_dump_json() +
+                  "\nRespect topic switches. Use prior facts only for this task. Understand short adjustments in context; "
+                  "ask one targeted question when information is genuinely missing.\n") + system
     if request_intent == "record":
         system = "This turn requests a record, not a Financial Plan. Return planning null. No record is saved yet. " + system
     elif request_intent == "plan":
@@ -458,6 +714,8 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
             "Do not ask whether they meant to view records or record income or expenses. "
         ) + system
     system = (
+        "A hypothetical income receipt does not establish a recurring monthly increase. If recurrence is unspecified, "
+        "distinguish a one-time effect for one month from an ongoing change and ask which is intended. "
         "Informational questions about existing income, budgets, spending, debts or savings are read-only: "
         "answer from verified context with action null and planning null. Never interpret a request to show "
         "existing records as a request to create them. Missing information is unknown, not zero. "
@@ -468,8 +726,8 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
         system = "This turn is read-only. Return action null and planning null. " + system
     try:
         messages = [{"role": "system", "content": system}] + [message.model_dump() for message in body.messages]
-        reply = generate_chat_reply(messages)
-        if goal_mode and reply and (wrong_goal_currency(reply, body.currency) or unverified_goal_claim(reply)):
+        reply = format_model_reply(generate_chat_reply(messages), body.currency, body.messages[-1].content)
+        if goal_mode and reply and (wrong_goal_currency(reply, body.currency) or unverified_goal_claim(reply) or unverified_goal_amounts(reply, context, body.messages)):
             # Regenerate from authoritative context; changing a currency label alone
             # could leave an invented converted amount in place.
             reply = generate_chat_reply([{"role": "system", "content":
@@ -477,7 +735,8 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
                 "You have not changed any records. Surplus is conditional monthly headroom if the saved budget is followed, not available cash this month. "
                 "Use the already converted financial context exactly. No foreign currency amounts, dollar symbols "
                 "or invented exchange rates. Return the required JSON."}, *messages])
-            if reply and (wrong_goal_currency(reply, body.currency) or unverified_goal_claim(reply)):
+            reply = format_model_reply(reply, body.currency, body.messages[-1].content)
+            if reply and (wrong_goal_currency(reply, body.currency) or unverified_goal_claim(reply) or unverified_goal_amounts(reply, context, body.messages)):
                 missing = planning.get("assessment", {}).get("missing", [])
                 fields = {"goal": "what you are saving for", "target_amount": "the goal amount", "deadline": "your preferred monthly savings amount or target date"}
                 question = ", ".join(fields[key] for key in missing if key in fields)
@@ -499,18 +758,27 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
         try:
             parsed_record = json.loads(reply)
             raw_action = parsed_record.get("action") if isinstance(parsed_record, dict) else None
-            normalized = normalize_action(raw_action, body.messages, today)
+            if semantic and isinstance(raw_action, dict) and raw_action.get("kind") == "expense":
+                from app.services.chat_context import _requested_category
+                from app.services.chat_records import recording_text
+                from app.schemas.planning import CATEGORIES
+                explicit_category = _requested_category(recording_text(body.messages, semantic.continuation))
+                if explicit_category in (*CATEGORIES, "Groceries"):
+                    # Named categories override a model's broader umbrella label.
+                    raw_action = {**raw_action, "category": explicit_category}
+            normalized = normalize_action(raw_action, body.messages, today, semantic.continuation if semantic else None)
             supplied = ProposedAction.model_validate(normalized)
-            if not supports_action(body.messages, supplied):
+            if not (semantic.supports(body.messages, supplied) if semantic else supports_action(body.messages, supplied)):
                 raise ValueError("Specify the amount and record type.")
             action = ProposedAction.model_validate(
                 base_patch(normalized, body.aed_to_cny) if body.currency == "CNY" else normalized)
         except (ValueError, TypeError, OverflowError):
             return ChatResponse(
-                reply="Please clarify the amount, category and payment date for an expense, or the amount and month for income. Nothing has been saved.",
+                reply=((semantic.clarification or "What amount, expense category and payment date (or income month) should I use?") + " Nothing has been saved.") if semantic else "Please clarify the amount, category and payment date for an expense, or the amount and month for income. Nothing has been saved.",
                 planning_profile=body.planning_profile.model_dump(mode="json") if body.planning_profile else None,
                 goal_planning=body.goal_planning)
-        proposal = create_proposal(db, current_user.id, action)
+        proposal = create_proposal(db, current_user.id, action,
+            record_draft.draft_id if record_draft and record_draft.kind == action.kind else None)
         return ChatResponse(
             reply=pending_reply(action, body.currency, body.aed_to_cny), proposal=proposal,
             planning_profile=body.planning_profile.model_dump(mode="json") if body.planning_profile else None,
@@ -546,8 +814,18 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
     extracted_goal = False
     if parsed.get("planning") is not None and body.review_budget is None:
         try:
-            raw_planning = parsed["planning"]
+            raw_planning = numeric_goal_patch if numeric_goal_patch is not None else parsed["planning"]
             if isinstance(raw_planning, dict):
+                from app.services.chat_interpretation import stated_amounts
+                raw_planning = grounded_savings(raw_planning, goal_messages, today)
+                stated = stated_amounts(body.messages)
+                for key in ("income", "other_income", "target_amount", "current_amount", "monthly_contribution", "preferred_monthly_savings"):
+                    if raw_planning.get(key) is not None:
+                        try:
+                            if Decimal(str(raw_planning[key])) not in stated:
+                                raw_planning.pop(key)
+                        except (ArithmeticError, ValueError, TypeError):
+                            raw_planning.pop(key)
                 # A relative timeframe ("in six months") is converted to the
                 # exact date here, so the model never calculates dates
                 raw_planning = dict(raw_planning)
@@ -563,6 +841,11 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
                     converted = deadline_from_months(today, months)
                     if converted is not None:
                         raw_planning["deadline"] = converted.isoformat()
+            if goal_mode and isinstance(raw_planning, dict) and raw_planning.get("protected_categories"):
+                # Validate protections against authoritative saved categories without
+                # relaxing PlanningInput's category membership requirement.
+                raw_planning["expenses"] = {row["category"]: Decimal(str(row["target"])) * (body.aed_to_cny if body.currency == "CNY" else Decimal(1))
+                                            for row in budget["ideal_budget"]["allocations"]}
             patch = PlanningInput.model_validate(base_patch(raw_planning, body.aed_to_cny) if body.currency == "CNY" else raw_planning).model_dump(mode="json", exclude_unset=True, exclude_none=True)
             # Generated empty defaults are not evidence that the user cleared data.
             patch = {key: value for key, value in patch.items() if value not in ([], {})}
@@ -581,6 +864,8 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
                     merged[key] = list(dict.fromkeys([*merged.get(key, []), *value]))
                 else:
                     merged[key] = value
+            if goal_mode and merged.get("protected_categories"):
+                merged["expenses"] = {row["category"]: row["target"] for row in budget["ideal_budget"]["allocations"]}
             validated = PlanningInput.model_validate(merged)
             checked = assess_budget_goal(validated.model_dump(mode="json"), budget, today, choices) if goal_mode else evaluate(validated, planning, today)
             # Model extraction is a reviewable draft, never an automatic profile write.
@@ -608,6 +893,12 @@ def chat(body: ChatRequest, current_user: CurrentUser, db: Session = Depends(get
             updated_profile = card["profile"]
         assessment = assess_budget_goal(updated_profile, budget, today, choices)
         draft = card or verified_goal_draft(updated_profile, budget, today, choices, body.budget_draft_fingerprint)
+        if semantic and assessment["missing"] == ["deadline"] and updated_profile.get("monthly_contribution") is None:
+            # There is no verified monthly requirement yet. A free-form model
+            # reply must not fill that gap with invented arithmetic or dates.
+            target = Decimal(str(updated_profile["target_amount"])) * (body.aed_to_cny if body.currency == "CNY" else Decimal(1))
+            final_reply = (f"For your {updated_profile['goal']} goal of {body.currency} {target:,.2f}, "
+                           "how much would you like to save each month, or what target date would you prefer? Nothing has been saved.")
         return ChatResponse(reply=reconcile_reply(final_reply, draft, body), planning_profile=updated_profile, goal_planning=True,
                             budget_goal=assessment, plan=draft)
     if extracted_goal and updated_profile is not None and body.review_budget is None and not needs_budget:

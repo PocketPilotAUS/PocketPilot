@@ -40,6 +40,9 @@ def with_progress(plan, contributed_cents):
     """Plan with assigned savings added to its progress (savings goals only)."""
     if not is_savings_goal(plan):
         return plan
+    # Older saved goal snapshots receive the same explicit display field on read.
+    from app.services.budget_goals import with_savings_headroom
+    plan = with_savings_headroom(plan)
     base = round(float(plan.get("savedAmount") or 0), 2)
     contributed = (contributed_cents or 0) / 100
     return dict(plan, enteredSavedAmount=base, contributedAmount=contributed, savedAmount=round(base + contributed, 2))

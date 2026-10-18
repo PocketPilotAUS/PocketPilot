@@ -10,7 +10,7 @@ import FinancialPlanCard from "./FinancialPlanCard";
 import PlanningForm from "./PlanningForm";
 import BudgetPlanEditor from "./BudgetPlanEditor";
 import { FinancialPlan, PlanningContext, PlanningProfile, PlanSuggestion, SpendingStatus } from "../../types/plans";
-import { getPlanningContext, getPlans, getSpendingStatus, planningRequest, savePlan, confirmBudgetPlan } from "../../services/planningService";
+import { getPlanningContext, getPlans, getSpendingStatus, planningRequest, confirmBudgetPlan, acceptReviewedPlan } from "../../services/planningService";
 import { SessionExpiredError } from "../../services/apiClient";
 
 type Props = { apiBaseUrl: string; onPreview: (plan: FinancialPlan) => void; onStartPlanning: () => void; initialProfile?: PlanningProfile; focusPlanId?: string };
@@ -48,7 +48,7 @@ export default function FinancialPlans({ apiBaseUrl, onPreview, onStartPlanning,
   const save = async () => {
     if (!preview || busy) return; setBusy(true); setError("");
     try {
-      const saved = preview.budgetGoalSource ? await confirmBudgetPlan(apiBaseUrl, preview, editing?.id) : await savePlan(apiBaseUrl, preview.profile, editing?.id);
+      const saved = !editing?.id ? await acceptReviewedPlan(apiBaseUrl, preview) : preview.budgetGoalSource ? await confirmBudgetPlan(apiBaseUrl, preview, editing.id) : await acceptReviewedPlan(apiBaseUrl, preview, undefined, editing.id);
       onPreview(saved); setPlans(rows => [...rows.filter(row => row.id !== saved.id), saved]);
       setSelected(saved); setEditing(null); setPreview(null);
     } catch (err) { if (!(err instanceof SessionExpiredError)) setError((err as Error).message); }

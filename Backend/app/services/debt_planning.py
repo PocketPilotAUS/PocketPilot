@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 
 from app.services.chat_context import intent
+from app.core.currency import format_reply_currency
 from app.services.goal_dates import resolve_deadline
 from app.services.spending_monitor import active_goals
 
@@ -126,7 +127,7 @@ def draft(data, calculated, budget, today, user_id, state, replace_id=None):
             'budgetGoalSource': True, 'debtGoalSource': True, 'confirmationKey': key,
             'debtConfirmation': seal(facts, user_id, 'debt_draft'),
             'debtState': seal({'debt_ids': data['debt_ids'], 'deadline': calculated['deadline'],
-                               'chosen': state.get('chosen'), 'snapshot': data['snapshot'],
+                               'chosen': state.get('chosen'), 'duration_unit': state.get('duration_unit'), 'snapshot': data['snapshot'],
                                'phase': 'review', 'plan_key': replace_id or key}, user_id, 'debt_conversation'),
             'draftFingerprint': signature, 'budgetFingerprint': fingerprint(budget), 'budgetChoices': {},
             'income': budget['income'], 'baselineSpending': data['planned'],
@@ -155,16 +156,62 @@ def draft(data, calculated, budget, today, user_id, state, replace_id=None):
                             'Accept saves a plan only. It does not record a payment or change your loan or budget.']}
 
 
-def turn(db, user_id, budget, messages, today, token=None, language='en', currency='AED', rate=None, plan_status=None):
+
+def loan_context(row, currency, rate):
+    """Saved facts for interpretation/advice; annual rate and term are not money."""
+    factor = Decimal(str(rate)) if currency == 'CNY' else Decimal(1)
+    return {'id': row['id'], 'name': row['name'],
+            'balance': float((Decimal(str(row['planning_principal'])) * factor).quantize(Decimal('.01'))),
+            'annual_rate': row['annual_rate'], 'remaining_months': row['remaining_months'],
+            'estimated_monthly_payment': float((Decimal(str(row['estimated_monthly_payment'])) * factor).quantize(Decimal('.01')))}
+
+
+def select_debts(records, text, result, current):
+    """Match saved names without punctuation/case dependence; never default to all."""
+    def words(value):
+        return set(re.findall(r"[^\W_]+", value.casefold())) - {'loan', 'loans', 'debt', 'debts', 'my', 'the', 'a', 'an'}
+    available = {row['id'] for row in records}
+    if re.search(r'\ball (?:my |the )?(?:debts|loans)\b', text, re.I):
+        return sorted(available)
+    # A unique identifying part of the stored name is sufficient ("car" for
+    # "Car Loan - Toyota"); overlapping names must be clarified.
+    from app.services.goal_dates import COUNT
+    name_text = re.sub(COUNT + r'\s*(months?|years?|yrs?)\b', '', text, flags=re.I)
+    mentioned = words(name_text)
+    scores = {row['id']: len(words(row['name']).intersection(mentioned)) for row in records}
+    best = max(scores.values(), default=0)
+    matches = sorted(key for key, score in scores.items() if score == best and score > 0)
+    reference = result.get('debt_reference')
+    grounded_reference = isinstance(reference, str) and reference.strip() and reference.casefold() in text.casefold()
+    candidates = result.get('debt_ids')
+    if isinstance(candidates, list) and candidates and all(type(value) is int and value in available for value in candidates):
+        if grounded_reference:
+            # Semantic matching supports synonyms, but never resolves overlapping
+            # saved names by choosing one arbitrary model ID.
+            if len(matches) > 1:
+                return []
+            if not matches:
+                matches = sorted(set(candidates))
+    if len(matches) == 1:
+        return matches
+    if len(matches) > 1 or grounded_reference:
+        return []
+    if current:
+        return sorted(set(current)) if set(current).issubset(available) else []
+    return sorted(available) if len(available) == 1 else []
+
+
+def turn(db, user_id, budget, messages, today, token=None, language='en', currency='AED', rate=None, plan_status=None, allow_switch=True):
     # Context only: an authenticated owner can resume it; every figure is recalculated.
     previous = unseal(token, user_id, 'debt_conversation', allow_expired=True) if token else {}
     state = {key: value for key, value in previous.items() if key in
-             ('debt_ids', 'deadline', 'chosen', 'phase', 'snapshot', 'plan_key')}
+             ('debt_ids', 'deadline', 'chosen', 'phase', 'snapshot', 'plan_key', 'duration_unit')}
     data = snapshot(db, user_id, budget, today, state.get('debt_ids'), state.get('plan_key'))
     previous_scenario = scenario(data, state.get('deadline'), state.get('chosen'), today)
     display = {'today': today.isoformat(), 'currency': currency, 'phase': state.get('phase', 'start'),
                'saved_plan_status': plan_status, 'pending_proposal': previous_scenario,
-               'debts': [{'id': row['id'], 'name': row['name']} for row in data['debts']]}
+               'selected_debt_ids': state.get('debt_ids'),
+               'debts': [loan_context(row, currency, rate) for row in data['debts']]}
     model_messages = [message.model_dump() for message in messages]
     try:
         result = json.loads(interpret_debt_turn(model_messages, display))
@@ -172,23 +219,54 @@ def turn(db, user_id, budget, messages, today, token=None, language='en', curren
             raise ValueError()
     except Exception:
         result = {'intent': 'discuss'}
+    from app.services.chat_followups import standalone_amount, amount_question
+    from app.services.chat_record_drafts import numeric_value
+    number_token = standalone_amount(messages[-1].content)
+    field = amount_question(messages)
+    if previous and number_token is not None and field in ("monthly", "extra"):
+        result = {"intent": "adjust", "extra_monthly" if field == "extra" else "monthly_payment": float(numeric_value(number_token))}
     action = result['intent']
     if action == 'switch':
-        return None
+        if allow_switch:
+            return None
+        action = 'discuss'  # Do not undo the outer interpreter's selected debt task.
     latest = re.sub(r'\n\[Currency for untagged amounts[^\n]*\]', '', messages[-1].content).strip()
-    ids = result.get('debt_ids')
-    # Names/IDs selected by the model must also be explicitly present in this turn.
-    if isinstance(ids, list) and ids and all(isinstance(value, int) and not isinstance(value, bool) for value in ids):
-        named = {row['id'] for row in data['debts'] if row['name'].casefold() in latest.casefold()}
-        if set(ids).issubset(named) or re.search(r'\ball (?:my |the )?(?:debts|loans)\b', latest, re.I):
-            state['debt_ids'] = sorted(set(ids))
-    if not state.get('debt_ids'):
-        named = [row['id'] for row in data['debts'] if row['name'].casefold() in latest.casefold()]
-        state['debt_ids'] = named or data['debt_ids']
+    ids = select_debts(data['debts'], latest, result, state.get('debt_ids'))
+    if not ids:
+        state.update(debt_ids=[], phase='select')
+        pending_date, _ = resolve_deadline([latest], today)
+        if pending_date is not None:
+            state['deadline'] = pending_date.isoformat()
+        if data['debts']:
+            names = ', '.join(row['name'] for row in data['debts'])
+            reply = f"Which saved loan would you like to plan for: {names}? You can also choose all your loans. Nothing has been changed."
+        else:
+            reply = "I don't have a saved debt for your account. Add the loan in Debts with its balance, annual interest rate and remaining term, then I can check faster repayment. Nothing has been changed."
+        return {'reply': reply, 'debt_state': seal(state, user_id, 'debt_conversation'), 'debt_phase': 'select'}
+    state['debt_ids'] = ids
     timeframe_text = re.split(r'\binstead of\b', latest, flags=re.I)[0]
     resolved, problem = resolve_deadline([timeframe_text], today)
+    ambiguous_duration = None
+    if resolved is None and action == 'adjust':
+        # Resolve elliptical counts only when the model identifies an adjustment
+        # and a user-stated timeframe supplies the unit. Server computes the date.
+        from app.services.goal_dates import COUNTS, COUNT, deadline_from_months
+        token = result.get('duration_count_text')
+        prior = ' '.join(message.content for message in messages[:-1] if message.role == 'user')
+        units = list(re.finditer(COUNT + r"\s*(months?|years?|yrs?)\b", prior, re.I))
+        inherited = ('month' if units[-1].group(2).lower().startswith('month') else 'year') if units else state.get('duration_unit')
+        if isinstance(token, str) and inherited is None and re.search(r'(?<!\w)' + re.escape(token) + r'(?!\w)', latest, re.I):
+            ambiguous_duration = token
+        if isinstance(token, str) and inherited is not None and re.search(r'(?<!\w)' + re.escape(token) + r'(?!\w)', latest, re.I):
+            count = int(token) if token.isdigit() else COUNTS.get(token.lower())
+            if count:
+                resolved = deadline_from_months(today, count * (12 if inherited == 'year' else 1))
     if resolved is None and not previous:
         resolved, problem = resolve_deadline([message.content for message in messages if message.role == 'user'], today)
+    from app.services.goal_dates import COUNT
+    explicit_units = list(re.finditer(COUNT + r"\s*(months?|years?|yrs?)\b", latest, re.I))
+    if explicit_units:
+        state['duration_unit'] = 'month' if explicit_units[-1].group(2).lower().startswith('month') else 'year'
     changed = resolved is not None and resolved.isoformat() != state.get('deadline')
     if resolved is not None:
         state.update(deadline=resolved.isoformat(), chosen=None)
@@ -242,7 +320,8 @@ def turn(db, user_id, budget, messages, today, token=None, language='en', curren
         plan = None
     state['snapshot'] = data['snapshot']
     from app.core.languages import LANGUAGE_NAMES
-    context = {'today': today.isoformat(), 'name': data['selected'][0]['name'] if len(data['selected']) == 1 else 'all selected debts',
+    context = {'saved_debts': [loan_context(row, currency, rate) for row in data['selected']],
+               'today': today.isoformat(), 'name': data['selected'][0]['name'] if len(data['selected']) == 1 else 'all selected debts',
                'total': data['total'], 'regularMonthly': data['regular'], 'planned_total': data['planned'],
                'existingGoalCommitments': data['commitments'], 'availableBefore': data['surplus'],
                'proposal': calculated, 'phase': state.get('phase'), 'draft_shown': plan is not None,
@@ -263,6 +342,9 @@ def turn(db, user_id, budget, messages, today, token=None, language='en', curren
               "Use proposal.total_repayment as the recalculated total, not the old schedule total. "
               "When first discussing a repayment scenario, also say how much estimated interest is saved (proposal.interest_saved) versus the current schedule. "
               "Interest savings assume the saved fixed rate and monthly reducing-balance payments, excluding fees; they are not a guaranteed lender quote. "
+              "saved_debts contains the user's saved balance, annual_rate (ANNUAL percentage, never monthly), remaining_months and current monthly payment. "
+              "Use these saved details; never ask the user for a balance, rate, term or current payment already present. "
+              "The saved balance is principal; total is the estimated schedule total including interest. Do not call total the loan balance. "
               "Do not invent numbers, dates, interest savings, household facts or budget cuts. "
               "If no timeframe is available, ask what timeframe or monthly amount they prefer. If something is too much, discuss a comfortable amount without guessing. "
               "If draft_shown is true, a calculated review card is attached: briefly point to Accept, Adjust or Reject. It is not saved yet. "
@@ -278,7 +360,7 @@ def turn(db, user_id, budget, messages, today, token=None, language='en', curren
         reply = raw.get('reply') if isinstance(raw, dict) else None
         if not isinstance(reply, str) or not reply.strip() or len(reply) > 16000:
             raise ValueError()
-        reply = re.sub(r'\$\s?(?=\d)', currency + ' ', reply)
+        reply = format_reply_currency(reply, currency, latest)
         reply = re.sub(r'\b\d{1,3}:(?=\d{4}-\d{2}-\d{2}\b)', '', reply)
         if not previous and re.search(r'\b(?:available|left|spare|surplus)\b', reply, re.I) and not re.search(r'\b(?:budget|assuming|assumes|if you follow)\b', reply, re.I):
             reply += ' That availability assumes following your saved monthly budget; it is not money already saved.'
@@ -286,8 +368,10 @@ def turn(db, user_id, budget, messages, today, token=None, language='en', curren
             raise ValueError()
         if state.get('phase') != 'saved' and re.search(r"\b(?:I've|I have|we have) (?:saved|recorded)\b|\bplan\b.{0,35}\b(?:is|has been) (?:saved|approved)\b", reply, re.I):
             raise ValueError()
-        allowed_money = {round(float(context[field]), 2) for field in
-                         ('total', 'regularMonthly', 'planned_total', 'existingGoalCommitments', 'availableBefore')}
+        allowed_money = {round(float(row['balance']), 2) for row in context['saved_debts']}
+        allowed_money.update(round(float(row['estimated_monthly_payment']), 2) for row in context['saved_debts'])
+        allowed_money.update(round(float(context[field]), 2) for field in
+                         ('total', 'regularMonthly', 'planned_total', 'existingGoalCommitments', 'availableBefore'))
         if context['proposal']:
             allowed_money.update(round(float(context['proposal'][field]), 2) for field in ('monthly', 'extra', 'left', 'principal', 'total_repayment', 'remaining_interest', 'baseline_total', 'baseline_interest', 'interest_saved', 'final_payment'))
         for unit, number in re.findall(r'\b(AED|CNY|USD)\s+(-?\d[\d,]*(?:\.\d+)?)', reply, re.I):
@@ -308,6 +392,15 @@ def turn(db, user_id, budget, messages, today, token=None, language='en', curren
                      f"through {calculated['deadline']}. What would you like to change or understand about it?")
         else:
             reply = verified_reply(data, calculated, today, currency, rate, problem)
+    if ambiguous_duration:
+        reply = f"Do you mean {ambiguous_duration} months or years? Nothing has been changed."
+    elif not previous and calculated is None and state.get('phase') != 'declined':
+        reply = verified_reply(data, None, today, currency, rate, problem)
+    elif previous and changed and calculated and plan is None and state.get('phase') not in ('declined', 'saved'):
+        # A changed scenario has verified estimates already; don't let the reply
+        # model replace them with an intake question or its own calculations.
+        reply = verified_reply(data, calculated, today, currency, rate, problem).split('\n\n', 1)[-1]
+        reply += ' Nothing has been changed.'
     if calculated and calculated['interest_saved'] > 0 and state.get('phase') not in ('declined', 'saved') and (changed or plan or not previous):
         factor = Decimal(str(rate)) if currency == 'CNY' else Decimal(1)
         saved = (Decimal(str(calculated['interest_saved'])) * factor).quantize(Decimal('.01'))
@@ -352,6 +445,11 @@ def verified_reply(data, calculated, today, currency="AED", rate=None, problem=N
         return intro + f"\n\nThere is no estimated amount left to pay for {name}."
     if problem == 'past':
         return intro + "\n\nThat target date has already passed. What future date would you like to aim for?"
+    if calculated is None and len(data['selected']) == 1:
+        loan = data['selected'][0]
+        return (f"Your saved {loan['name']} balance is {cash(loan['planning_principal'])}, at {loan['annual_rate']:g}% annual interest, "
+                f"with {loan['remaining_months']} months remaining and a current payment of about {cash(loan['estimated_monthly_payment'])} per month. "
+                "What payoff timeframe or total monthly payment would you like to check against your saved budget? Nothing has been changed.")
     if calculated is None:
         return intro + (f"\n\nFor {name}, the estimated total left is {cash(data['total'])} and the current monthly payment is {cash(data['regular'])}. "
                         "What repayment timeframe or total monthly amount would you like to check?")

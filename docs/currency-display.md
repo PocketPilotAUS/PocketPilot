@@ -30,3 +30,9 @@ Deploy or run the matching frontend and backend revision together and restart an
 
 See [testing](testing.md) for current commands and coverage. Live device/Ollama behavior requires manual QA.
 Conversion uses current/cached rates, not historical transaction-day rates. Canonical storage remains AED.
+
+## Shared response formatting
+
+Backend/core currency formatting normalizes inappropriate bare dollar symbols in AED/CNY financial replies to the selected currency label; explicitly labeled USD is preserved rather than converted or relabeled. Numeric conversion uses existing validated rates, not text replacement. New plan monetary fields such as remainingAfterSavings participate in shared formatting. A monthly contribution remains a contribution after conversion, never an income receipt.
+
+Live Ollama harnesses exercise currency-sensitive flows in addition to mocked contract tests. The owner reports planned physical-device AI/safety tests passed; this does not guarantee every generated sentence or untested currency expression.
