@@ -157,7 +157,13 @@ def list_debts(current_user: CurrentUser, db: Session = Depends(get_db)):
     ready(db)
     from app.services.debt_schedule import sync
     sync(db, current_user.id)
-    return [serialize(row, db) for row in db.query(Debt).filter(Debt.user_id == current_user.id).order_by(Debt.id).all()]
+    records = [serialize(row, db) for row in db.query(Debt).filter(Debt.user_id == current_user.id).order_by(Debt.id).all()]
+    from app.services.debt_targets import applied_targets
+    from app.services.debt_schedule import today_local
+    today = today_local()
+    regulars = {row['id']: (Decimal(str(row['estimated_monthly_payment'])), Decimal(str(row['total_left_to_pay']))) for row in records}
+    _, _, details = applied_targets(db, current_user.id, today.year, today.month, regulars)
+    return [{**row, **({'repayment_plan': details[row['id']]} if row['id'] in details else {})} for row in records]
 
 
 @router.post("", status_code=201)

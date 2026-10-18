@@ -33,7 +33,7 @@ export default function BudgetTracker({ data, apiBaseUrl, onSaved, onReview, aiB
       return <View key={row.category}>
         <View style={s.budgetHeaderRow}><Text style={s.budgetName}>{row.category}</Text><Text style={s.budgetFigures}><Text style={[s.budgetFiguresStrong, row.over && s.statusDanger]}>{formatAED(row.spent)}</Text>{row.target != null ? ` / ${formatAED(row.target)}` : ""}</Text></View>
         {row.target != null && <View style={s.budgetTrack} accessibilityRole="progressbar" accessibilityLabel={`${row.category} budget used`} accessibilityValue={{ min: 0, max: 100, now: Math.round(percent), text: `${formatAED(row.spent)} / ${formatAED(row.target)}` }}>
-          <View style={[s.budgetFill, row.over ? s.budgetFillDanger : ratio >= .8 ? s.budgetFillWarning : null, { width: `${percent}%` }]} />
+          <View style={[s.budgetFill, row.over ? s.budgetFillDanger : row.aboveTarget ? s.budgetFillWarning : null, { width: `${percent}%` }]} />
         </View>}
         {row.over && <View style={s.overBadge}><TriangleAlert size={12} color={palette.danger} /><Text style={s.overBadgeText}>Over by {formatAED(row.overBy)}</Text></View>}
       </View>;

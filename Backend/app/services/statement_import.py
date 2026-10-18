@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 MAX_ROWS = 50
 MAX_BYTES = 128 * 1024
-CATEGORIES = ["Rent", "Entertainment", "Food", "Transport", "Shopping", "Subscriptions", "Bills", "Other"]
+CATEGORIES = ["Rent", "Entertainment", "Food", "Groceries", "Transport", "Shopping", "Subscriptions", "Bills", "Other"]
 ALIASES = {
     "date": {"date", "transactiondate", "postingdate", "posteddate", "valuedate"},
     "description": {"description", "transactiondescription", "details", "narrative", "merchant", "particulars"},
@@ -118,7 +118,51 @@ def fingerprint(row):
     return (row["date"], Decimal(str(row["amount_aed"])).quantize(Decimal("0.01")), row["description"].strip().casefold())
 
 
-def review_rows(rows, labels, existing):
+# Match explicit purchase descriptions, not arbitrary substrings or amounts.
+DESCRIPTION_CATEGORIES = {
+    "Rent": r"\b(?:(?:apartment|house|flat|monthly)\s+rent|rent\s+(?:payment|for|installment|instalment))\b",
+    "Groceries": r"\b(?:groceries|grocery|vegetables|fruit|toiletries|cleaning\s+(?:products|supplies)|household\s+(?:items|supplies|essentials))\b",
+    "Food": r"\b(?:restaurant|cafeteria|cafe|coffee|bakery|breakfast|lunch|dinner|takeaway|food\s+delivery)\b",
+    "Transport": r"\b(?:petrol|gasoline|fuel|taxi|metro|nol|parking|bus\s+(?:fare|ticket)|car\s+rental)\b",
+    "Entertainment": r"\b(?:cinema|movie\s+tickets?|bowling|arcade|escape\s+room|pool\s+table|concert\s+tickets?)\b",
+    "Shopping": r"\b(?:clothing|clothes|shoes|accessories|household\s+goods|online\s+shopping|laptop|smartphone|iphone|headphones|electronics)\b",
+    "Subscriptions": r"\b(?:(?:music|video|cloud|streaming)\s+(?:streaming\s+|storage\s+)?subscription|netflix|spotify|icloud|youtube\s+premium)\b",
+    "Bills": r"\b(?:(?:electricity|water|internet|mobile|phone|utility|utilities)\s+(?:and\s+water\s+)?bill|home\s+internet|broadband\s+bill)\b",
+}
+TRANSFER_DESCRIPTION = r"\b(?:transfer|credit\s+card\s+payment|card\s+repayment|cash\s+withdrawal|atm\s+withdrawal)\b"
+INSTRUCTION_DESCRIPTION = r"\b(?:ignore\s+(?:all|previous|prior)|system\s+(?:prompt|message)|return\s+(?:json|only)|classify\s+(?:this|all)|set\s+(?:the\s+)?category)\b"
+
+
+def description_category(description, categories=None):
+    categories = categories or CATEGORIES
+    text = " ".join(description.casefold().replace("-", " ").split())
+    if re.search(INSTRUCTION_DESCRIPTION, text, re.I):
+        return None
+    available = {name.casefold(): name for name in categories}
+    matches = {available[name.casefold()] for name, pattern in DESCRIPTION_CATEGORIES.items()
+               if name.casefold() in available and re.search(pattern, text, re.I)}
+    # Use a dedicated custom category only when the statement names it explicitly.
+    custom = {name for name in categories if name not in CATEGORIES and
+              re.search(r"(?<!\w)" + re.escape(name.casefold()) + r"(?!\w)", text)}
+    if len(custom) == 1 and not matches:
+        return next(iter(custom))
+    if len(matches) == 1 and not custom:
+        return next(iter(matches))
+    if not matches and not custom and "groceries" in available and re.search(r"\b(?:supermarket|carrefour|lulu)\b", text):
+        return available["groceries"]
+    return None
+
+
+def ambiguous_description(description, categories=None):
+    if description_category(description, categories):
+        return False
+    text = " ".join(description.casefold().replace("-", " ").split())
+    matches = [name for name, pattern in DESCRIPTION_CATEGORIES.items() if re.search(pattern, text, re.I)]
+    return len(matches) > 1 or bool(re.search(r"\b(?:amazon|carrefour|lulu|apple)\b", text))
+
+
+def review_rows(rows, labels, existing, categories=None):
+    categories = categories or CATEGORIES
     existing_keys = {fingerprint(row) for row in existing}
     date_amount = {(key[0], key[1]) for key in existing_keys}
     seen = set()
@@ -129,11 +173,22 @@ def review_rows(rows, labels, existing):
         seen.add(key)
         label = suggestions.get(row["row_id"], {})
         kind = label.get("kind", "review" if row["direction"] == "debit" else "income")
-        if re.search(r"\b(transfer|credit card payment|card repayment|cash withdrawal|atm withdrawal)\b", row["description"], re.I):
-            kind = "transfer"
-        if row["direction"] == "credit" and kind == "expense" or row["direction"] == "debit" and kind == "income":
-            kind = "review"
-        if label.get("confidence", 0) < .8 and kind == "expense":
-            kind = "review"
-        row.update(kind=kind, category=label.get("category", "Other"))
+        category = label.get("category", "Other")
+        confidence = label.get("confidence", 0)
+        if row["direction"] == "credit":
+            # Incoming money is never an importable expense, even if the model says so.
+            kind = "income"
+        elif re.search(INSTRUCTION_DESCRIPTION, row["description"], re.I):
+            kind, category = "review", "Other"
+        elif re.search(TRANSFER_DESCRIPTION, row["description"], re.I):
+            kind, category = "transfer", "Other"
+        elif ambiguous_description(row["description"], categories):
+            kind, category = "review", "Other"
+        else:
+            explicit = description_category(row["description"], categories)
+            if explicit:
+                kind, category = "expense", explicit
+            elif kind not in ("expense", "transfer", "review") or category not in categories or type(confidence) not in (int, float) or not 0.8 <= confidence <= 1:
+                kind = "review"
+        row.update(kind=kind, category=category if category in categories else "Other")
     return rows

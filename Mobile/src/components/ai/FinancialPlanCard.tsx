@@ -20,6 +20,7 @@ import { formatAED, formatPercent } from "../../utils/dashboard";
 import { formatPlanningDate } from "../../utils/planningDate";
 import { percentOf, planScenario } from "../../utils/planVisuals";
 import SpendingStatusPanel from "./SpendingStatusPanel";
+import DebtPlanDetails from "./DebtPlanDetails";
 import { statusMessage } from "../../utils/spendingStatus";
 // Keep backend amounts and recommendations intact while presenting common messages plainly.
 function friendlyInsight(message: string): string {
@@ -90,6 +91,7 @@ export default function FinancialPlanCard({ plan, onSave, onEdit, onDelete, busy
   const contributionAffordable = scenario.shortfall <= 0.005;
   const onSchedule = plan.feasible && deadlineGap <= 0.005;
   const select = (category: string) => setSelected(current => current === category ? null : category);
+  if (plan.debtGoalSource) return <DebtPlanDetails plan={plan} busy={busy} onSave={onSave} onEdit={onEdit} onDelete={onDelete} />;
   return <View style={s.card}>
     <View style={s.planHeading}>
       <Text style={s.planEyebrow}>{plan.id ? "SAVED PLAN" : "DRAFT PLAN"}</Text>

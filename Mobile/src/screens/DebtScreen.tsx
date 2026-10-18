@@ -14,6 +14,7 @@ import { sanitizeDay, stepDay } from "../utils/addExpense";
 import { createDebtStyles } from "../styles/DebtStyles";
 import { amountDraft, currencyCode, toAED } from "../preferences/currency";
 import { Debt, loadDebts, removeDebt, saveDebt } from "../services/debtService";
+import { formatPlanningDate } from "../utils/planningDate";
 
 const blank = { name: "", balance: "", rate: "", years: "", months: "", original: "", autoDay: "", nextDue: "" };
 const money = (n: number) => `AED ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -21,6 +22,7 @@ export default function DebtScreen({ apiBaseUrl, onBack }: { apiBaseUrl: string;
   const { styles, palette, mode } = useDashboardTheme();
   const s = createDebtStyles(palette);
   const add = createAddExpenseStyles(palette);
+  const [historyDebt, setHistoryDebt] = useState<Pick<Debt, "id" | "name"> | null>(null);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -68,8 +70,9 @@ export default function DebtScreen({ apiBaseUrl, onBack }: { apiBaseUrl: string;
   </View>;
   return <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
     <StatusBar barStyle={mode === "dark" ? "light-content" : "dark-content"} />
-    <KeyboardFormScrollView contentContainerStyle={styles.content}>
-      <View style={[styles.header, navigationStyles.header]}><BackButton disabled={busy} onPress={onBack} label="Back to Home" /><View style={styles.headerText}><Text style={styles.eyebrow}>Your finances</Text><Text style={styles.title}>Debt</Text></View></View>
+    <KeyboardFormScrollView key={historyDebt?.id ?? "debts"} contentContainerStyle={styles.content}>
+      <View style={[styles.header, navigationStyles.header]}><BackButton disabled={busy} onPress={() => historyDebt ? setHistoryDebt(null) : onBack()} label={historyDebt ? "Back to Debt" : "Back to Home"} /><View style={styles.headerText}><Text style={styles.eyebrow}>Your finances</Text><Text style={styles.title}>{historyDebt ? "Debt payments" : "Debt"}</Text></View></View>
+      <DebtPaymentsPanel apiBaseUrl={apiBaseUrl} debts={debts} busy={busy} onBusyChange={setBusy} onChanged={() => { void refresh(); }} historyDebt={historyDebt} onHistory={setHistoryDebt} renderDebts={renderPaymentActions => <>
       {!!error && !formOpen && <View style={styles.errorBanner} accessibilityRole="alert"><TriangleAlert size={16} color={palette.danger} /><Text style={styles.errorBannerText}>{error}</Text></View>}
       {loading ? <View style={[styles.card, styles.loader]}><ActivityIndicator color={palette.accent} /></View> : !loadFailed && <>
         <View style={styles.card}>
@@ -77,7 +80,7 @@ export default function DebtScreen({ apiBaseUrl, onBack }: { apiBaseUrl: string;
           <Text style={styles.heroLabel}>Estimated total left to pay</Text>
           <Text style={styles.heroAmount} adjustsFontSizeToFit numberOfLines={1}>{money(debts.reduce((total, d) => total + d.total_left_to_pay, 0))}</Text>
           <View style={styles.statRow}>
-            <View style={styles.statTile}><Text style={styles.statLabel}>Estimated monthly payments</Text><Text style={styles.statValue} adjustsFontSizeToFit numberOfLines={1}>{money(debts.reduce((total, d) => total + d.estimated_monthly_payment, 0))}</Text></View>
+            <View style={styles.statTile}><Text style={styles.statLabel}>{debts.some(d => d.repayment_plan) ? "Monthly repayment targets" : "Estimated monthly payments"}</Text><Text style={styles.statValue} adjustsFontSizeToFit numberOfLines={1}>{money(debts.reduce((total, d) => total + (d.repayment_plan?.monthly_payment ?? d.estimated_monthly_payment), 0))}</Text></View>
             <View style={{ flex: 1 }} />
           </View>
         </View>
@@ -120,15 +123,22 @@ export default function DebtScreen({ apiBaseUrl, onBack }: { apiBaseUrl: string;
           <View style={styles.cardHeader}><View style={s.titleRow}><View style={s.icon}><CreditCard size={20} color={palette.accent} /></View><View style={styles.cardTitleBlock}><Text localize={false} style={s.debtName}>{debt.name}</Text><Text style={styles.cardSubtitle}>{`${debt.annual_rate}% · ${Math.floor(debt.remaining_months / 12)} years · ${debt.remaining_months % 12} months`}</Text></View></View></View>
           <Text style={styles.heroLabel}>Estimated total left to pay</Text><Text style={styles.heroAmount} adjustsFontSizeToFit numberOfLines={1}>{money(debt.total_left_to_pay)}</Text>
           <View style={styles.statRow}><View style={styles.statTile}><Text style={styles.statLabel}>Estimated monthly payment</Text><Text style={styles.statValue} adjustsFontSizeToFit numberOfLines={1}>{money(debt.estimated_monthly_payment)}</Text></View><View style={{ flex: 1 }} /></View>
+          {debt.repayment_plan && <View style={s.field}>
+            <Text style={styles.statLabel}>Monthly repayment target</Text>
+            <Text style={styles.statValue}>{money(debt.repayment_plan.monthly_payment)}</Text>
+            <Text style={styles.mutedText}>{money(debt.estimated_monthly_payment)} regular + {money(debt.repayment_plan.extra_payment)} planned extra</Text>
+            <Text style={styles.mutedText}>Target payoff: {formatPlanningDate(debt.repayment_plan.deadline)}</Text>
+          </View>}
+          {!formOpen && renderPaymentActions(debt)}
           <View style={s.actions}>
             <Pressable disabled={busy} onPress={() => open(debt)} accessibilityRole="button" accessibilityLabel="Edit debt" style={({ pressed }) => [s.editButton, busy && styles.buttonDisabled, pressed && s.pressed]}><Pencil size={15} color={palette.textSecondary} /><Text style={s.editText}>Edit debt</Text></Pressable>
             <Pressable disabled={busy} onPress={() => deleteDebt(debt)} accessibilityRole="button" accessibilityLabel="Delete debt" style={({ pressed }) => [s.deleteButton, busy && styles.buttonDisabled, pressed && s.pressed]}><Trash2 size={17} color={palette.danger} /></Pressable>
           </View>
         </View>)}
-        {!formOpen && <DebtPaymentsPanel apiBaseUrl={apiBaseUrl} debts={debts} busy={busy} onBusyChange={setBusy} onChanged={() => { void refresh(); }} />}
         <Text style={[styles.mutedText, s.note]}>Estimates assume fixed interest and equal monthly payments. Fees are excluded. Update balances manually from your lender statement.</Text>
       </>}
       {loadFailed && !busy && <Pressable onPress={() => { void refresh(); }} accessibilityRole="button" style={[styles.primaryButton, s.retry]}><Text style={styles.primaryButtonText}>Retry</Text></Pressable>}
+      </>} />
     </KeyboardFormScrollView>
   </SafeAreaView>;
 }

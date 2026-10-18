@@ -23,6 +23,8 @@ export type ChatMessage = {
   goalPlanning?: boolean;
   budgetRequired?: boolean;
   budgetGoal?: BudgetGoal;
+  debtState?: string;
+  debtPhase?: string;
 };
 
 export type BudgetChoice = { category: string; target: number | null; fingerprint: string };

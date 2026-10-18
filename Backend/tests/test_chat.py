@@ -56,8 +56,8 @@ def test_long_plan_is_returned_and_can_be_used_in_followup(api_client, monkeypat
     headers = signed_in(api_client)
     plan = 'Monthly payment plan. ' * 300
     monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({'reply': plan, 'action': None}))
-    response = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Make a debt plan'}]})
+    response = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Make a financial plan'}]})
     assert response.status_code == 200
     assert response.json()['reply'] == plan.strip()
-    response = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Make a debt plan'}, {'role': 'assistant', 'content': plan}, {'role': 'user', 'content': 'Explain month one'}]})
+    response = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Make a financial plan'}, {'role': 'assistant', 'content': plan}, {'role': 'user', 'content': 'Explain month one'}]})
     assert response.status_code == 200

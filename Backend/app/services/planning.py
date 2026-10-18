@@ -9,7 +9,7 @@ from app.models.transaction import Transaction
 from app.models.recurring import RecurringExpense
 from app.schemas.planning import PlanningInput, CATEGORIES
 
-ALIASES = {"groceries": "Food", "food and groceries": "Food", "housing": "Rent", "transportation": "Transport", "fuel": "Transport", "utilities": "Bills", "internet": "Bills", "loans": "Debt payments"}
+ALIASES = {"groceries": "Groceries", "food and groceries": "Food", "housing": "Rent", "transportation": "Transport", "fuel": "Transport", "utilities": "Bills", "internet": "Bills", "loans": "Debt payments"}
 
 
 def category_name(value):
@@ -98,6 +98,7 @@ def baseline(profile, context):
     categories = list(dict.fromkeys([
         *CATEGORIES,
         *profile.expenses.keys(),
+        *(["Groceries"] if any("Groceries" in month for month in context.get("past_months", {}).values()) else []),
     ]))
 
     for key in categories:

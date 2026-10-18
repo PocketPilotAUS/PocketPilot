@@ -80,6 +80,7 @@ export default function useChatSession(apiBaseUrl: string) {
         body: JSON.stringify({
           goal_planning: !!budgetChoice || messages.some(message => message.goalPlanning),
           require_budget: true,
+          debt_state: [...messages].reverse().find(message => message.role === "assistant")?.debtState,
           budget_draft_fingerprint: [...messages].reverse().find(message => message.plan?.budgetGoalSource)?.plan?.draftFingerprint,
           budget_draft_status: (() => { const message = [...messages].reverse().find(item => item.plan?.budgetGoalSource); return message ? message.plan!.id ? "saved" : message.planDeclined ? "declined" : "draft" : undefined; })(),
           resume_budget_goal: resumeBudgetGoal,
@@ -104,14 +105,14 @@ export default function useChatSession(apiBaseUrl: string) {
         throw Object.assign(new Error(detail), { status: response.status });
       }
 
-      const data: { reply: string; proposal?: Proposal | null; plan?: FinancialPlan | null; planning_profile?: PlanningProfile | null; goal_planning?: boolean; budget_required?: boolean; budget_goal?: BudgetGoal | null } = await response.json();
+      const data: { reply: string; proposal?: Proposal | null; plan?: FinancialPlan | null; planning_profile?: PlanningProfile | null; goal_planning?: boolean; budget_required?: boolean; budget_goal?: BudgetGoal | null; debt_state?: string | null; debt_phase?: string } = await response.json();
 
       if (typeof data.reply !== "string" || !data.reply.trim()) {
         throw Object.assign(new Error("Could not send your message. Please try again."), { status: 0 });
       }
 
       if (mounted.current && epoch.current === generation) {
-        onMessagesChange(current => [...current, pending, { role: "assistant", content: data.reply, proposal: data.proposal ?? undefined, plan: data.plan ?? undefined, planningProfile: data.planning_profile ?? undefined, goalPlanning: data.goal_planning, budgetRequired: data.budget_required, budgetGoal: data.budget_goal ?? undefined }]);
+        onMessagesChange(current => [...current, pending, { role: "assistant", content: data.reply, proposal: data.proposal ?? undefined, plan: data.plan ?? undefined, planningProfile: data.planning_profile ?? undefined, goalPlanning: data.goal_planning, budgetRequired: data.budget_required, budgetGoal: data.budget_goal ?? undefined, debtState: data.debt_state ?? undefined, debtPhase: data.debt_phase }]);
       }
     } catch (err) {
       if (!mounted.current || epoch.current !== generation || err instanceof SessionExpiredError) return;
@@ -145,13 +146,13 @@ export default function useChatSession(apiBaseUrl: string) {
     }
   };
 
-  const saveFinancialPlan = async (plan: FinancialPlan, index: number) => {
+  const saveFinancialPlan = async (plan: FinancialPlan, index: number, applyToBudget?: boolean) => {
     if (planLock.current || sending.current || plan.id || !plan.ready) return;
     planLock.current = true; setSavingPlan(index); setError(null);
     const generation = epoch.current;
     try {
-      const saved = plan.budgetGoalSource ? await confirmBudgetPlan(apiBaseUrl, plan) : await savePlan(apiBaseUrl, plan.profile);
-      if (mounted.current && generation === epoch.current) onMessagesChange(current => current.map((message, i) => i === index ? { ...message, plan: saved } : message));
+      const saved = plan.budgetGoalSource ? await confirmBudgetPlan(apiBaseUrl, plan, undefined, applyToBudget) : await savePlan(apiBaseUrl, plan.profile);
+      if (mounted.current && generation === epoch.current) onMessagesChange(current => current.map((message, i) => i === index ? { ...message, plan: saved, debtState: saved.debtState ?? message.debtState, debtPhase: saved.debtGoalSource ? "saved" : message.debtPhase } : message));
     } catch (err) {
       if (mounted.current && generation === epoch.current && !(err instanceof SessionExpiredError)) setError({ title: "Could not save plan", message: (err as Error).message, retry: false });
     } finally {
@@ -163,8 +164,8 @@ export default function useChatSession(apiBaseUrl: string) {
     if (!mounted.current || renderEpoch !== epoch.current) return;
     onMessagesChange(current => {
       const match = current.findIndex(message => message.plan && JSON.stringify(message.plan.profile) === JSON.stringify(plan.profile));
-      if (match >= 0 && plan.id) return current.map((message, i) => i === match ? { ...message, plan } : message);
-      return [...current, { role: "user", content: "Review my financial plan using the planning form." }, { role: "assistant", content: "Here is your calculated plan. Review the category targets, proposed cuts and any shortfall before saving.", plan }];
+      if (match >= 0 && plan.id) return current.map((message, i) => i === match ? { ...message, plan, debtState: plan.debtState ?? message.debtState, debtPhase: plan.debtGoalSource ? "saved" : message.debtPhase } : message);
+      return [...current, { role: "user", content: "Review my financial plan using the planning form." }, { role: "assistant", content: plan.debtGoalSource ? "Here is your calculated debt plan. Review the payment and deadline before saving." : "Here is your calculated plan. Review the category targets, proposed cuts and any shortfall before saving.", plan, debtState: plan.debtState }];
     });
   };
   return { savingPlan, saveFinancialPlan, addPlanPreview, messages, onMessagesChange, draft, setDraft, busy, pendingQuestion, error, setError, send, reset };

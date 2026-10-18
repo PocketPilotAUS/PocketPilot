@@ -35,7 +35,7 @@ export type Filters = {
 
 export const DEFAULT_FILTERS: Filters = {
   search: "",
-  date: { kind: "all" },
+  date: { kind: "thisMonth" },
   category: null,
   amount: { kind: "any" },
   sort: "newest",
@@ -255,7 +255,7 @@ export const SORT_LABELS: Record<SortOrder, string> = {
 
 export function activeFilterCount(filters: Filters): number {
   return (
-    (filters.date.kind !== "all" ? 1 : 0) +
+    (filters.date.kind !== DEFAULT_FILTERS.date.kind ? 1 : 0) +
     (filters.category !== null ? 1 : 0) +
     (filters.amount.kind !== "any" ? 1 : 0)
   );

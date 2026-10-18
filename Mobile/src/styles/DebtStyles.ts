@@ -1,6 +1,11 @@
 import { StyleSheet } from "react-native";
 import type { DashboardPalette } from "./DashboardStyles";
 export const createDebtStyles = (p: DashboardPalette) => StyleSheet.create({
+  paymentHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  paymentActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8, flexShrink: 0 },
+  paymentButton: { flex: 0, minHeight: 44, paddingHorizontal: 10, paddingVertical: 10, justifyContent: "center" },
+  paymentButtonText: { fontSize: 12 },
+  paymentEntry: { gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: p.border },
   paymentRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: p.border },
   paymentName: { flex: 1, color: p.text, fontSize: 15, fontWeight: "600" },
   paymentBody: { flex: 1, gap: 4 },

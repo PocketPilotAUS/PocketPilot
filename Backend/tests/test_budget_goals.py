@@ -157,3 +157,80 @@ def test_plain_model_response_still_returns_budget_metadata(api_client, monkeypa
     monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: 'What amount and exact deadline are you targeting?')
     result = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'I want to save for a vacation'}]}).json()
     assert result['goal_planning'] and result['budget_goal']['missing'] == ['goal', 'target_amount', 'deadline']
+
+@pytest.mark.parametrize('currency,rate,chosen', [('AED', None, 1000), ('CNY', 2, 2000)])
+def test_chosen_monthly_savings_keeps_income_and_generates_reviewable_goal(api_client, monkeypatch, db_session, currency, rate, chosen):
+    headers = auth(api_client)
+    save_budget(api_client, headers)
+    from app.services.budget_goals import deadline_for
+    from app.models.financial_plan import FinancialPlan
+    from app.models.income import MonthlyIncome
+    target = 5000 if currency == 'AED' else 10000
+    monkeypatch.setattr('app.routers.chat.extract_goal_facts', lambda _: json.dumps({
+        'goal': 'iPhone', 'goal_kind': 'savings', 'target_amount': target, 'monthly_contribution': chosen}))
+    monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({
+        'reply': f"I have set your monthly income to {chosen} {currency}.",
+        'action': {'kind': 'income', 'amount': chosen}, 'planning': {'income': chosen}}))
+    body = {'currency': currency, 'goal_planning': True,
+        'planning_profile': {'goal': 'iPhone', 'goal_kind': 'savings', 'target_amount': 5000},
+        'messages': [{'role': 'user', 'content': f'I want to save {target} for an iPhone'},
+            {'role': 'assistant', 'content': 'What monthly savings amount would you like?'},
+            {'role': 'user', 'content': f'Lets go with {chosen} a month'}]}
+    if rate:
+        body['aed_to_cny'] = rate
+    data = api_client.post('/ai/chat', headers=headers, json=body).json()
+    assert data['plan']['monthlyContribution'] == 1000
+    assert data['plan']['targetAmount'] == 5000
+    assert data['plan']['months'] == 5
+    assert Decimal(data['planning_profile']['income']) == 10000
+    assert 'income to' not in data['reply']
+    assert currency in data['reply']
+    assert data['proposal'] is None
+    assert db_session.query(MonthlyIncome).first().amount_cents == 1000000
+    assert db_session.query(FinancialPlan).count() == 0
+    today = datetime.now(timezone(timedelta(hours=4))).date()
+    assert data['plan']['deadline'] == deadline_for(today, Decimal(5000), Decimal(1000))
+
+
+def test_monthly_contribution_is_available_in_both_model_schemas(monkeypatch):
+    from app.ai import client
+    calls = []
+    monkeypatch.setattr(client, 'generate_answer', lambda messages, schema=None, **kwargs: calls.append((messages, schema)) or '{}')
+    client.generate_chat_reply([{'role': 'user', 'content': 'Lets go with 1k a month'}])
+    client.extract_goal_facts([{'role': 'user', 'content': 'Lets go with 1k a month'}])
+    assert 'monthly_contribution' in calls[0][1]['properties']['planning']['anyOf'][1]['properties']
+    assert 'monthly_contribution' in calls[1][1]['properties']
+
+
+def test_chosen_savings_above_surplus_has_no_approved_draft():
+    data = assess({'goal': 'iPhone', 'goal_kind': 'savings', 'target_amount': 5000, 'monthly_contribution': 1200}, budget(), TODAY)
+    assert data['ready'] and data['requiredMonthly'] == 1200
+    assert data['unfundedMonthly'] == 200 and not data['feasible']
+
+@pytest.mark.parametrize('bad_reply', ["You already have a goal set to save 5000 AED.",
+    "Since your surplus is AED 3013.86 available this month, you could save that entire amount this month."])
+def test_unconfirmed_goal_and_projected_cash_are_not_claimed_as_saved(api_client, monkeypatch, bad_reply):
+    headers = auth(api_client)
+    save_budget(api_client, headers)
+    monkeypatch.setattr('app.routers.chat.extract_goal_facts', lambda _: json.dumps({
+        'goal': 'iPhone', 'goal_kind': 'savings', 'target_amount': 5000}))
+    monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({'reply': bad_reply, 'action': None, 'planning': None}))
+    data = api_client.post('/ai/chat', headers=headers, json={'goal_planning': True,
+        'messages': [{'role': 'user', 'content': 'I want to save 5k for an iPhone'}]}).json()
+    assert data['reply'] != bad_reply
+    assert 'preferred monthly savings amount or target date' in data['reply']
+    assert data['plan'] is None and data['proposal'] is None
+
+
+def test_monthly_choice_from_main_reply_also_produces_draft(api_client, monkeypatch):
+    headers = auth(api_client)
+    save_budget(api_client, headers)
+    monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({
+        'reply': 'We can review that monthly savings amount.', 'action': None,
+        'planning': {'monthly_contribution': 1000, 'income': 1000}}))
+    data = api_client.post('/ai/chat', headers=headers, json={'goal_planning': True,
+        'planning_profile': {'goal': 'iPhone', 'goal_kind': 'savings', 'target_amount': 5000},
+        'messages': [{'role': 'user', 'content': 'Lets go with 1k a month'}]}).json()
+    assert data['plan']['monthlyContribution'] == 1000
+    assert data['plan']['months'] == 5
+    assert Decimal(data['planning_profile']['income']) == 10000

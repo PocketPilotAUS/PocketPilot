@@ -93,7 +93,8 @@ def test_history_context_is_per_user(api_client):
     alice = login(api_client); bob = login(api_client, 'bob@example.com')
     api_client.post('/transactions/', headers=alice, json={'amount': 100, 'category': 'Groceries', 'date': '2026-09-01'})
     data = api_client.get('/planning/context', headers=alice).json()
-    assert data['past_months']['2026-09']['Food'] == 100
+    assert data['past_months']['2026-09']['Groceries'] == 100
+    assert 'Food' not in data['past_months']['2026-09']
     assert api_client.get('/planning/context', headers=bob).json()['past_months'] == {}
 
 

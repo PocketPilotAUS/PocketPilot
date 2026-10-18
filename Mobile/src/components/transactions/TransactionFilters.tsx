@@ -98,7 +98,7 @@ export default function TransactionFilters({ filters, categories, today, onChang
     {
       key: "date",
       label: dateFilterLabel(filters.date, today),
-      active: filters.date.kind !== "all",
+      active: filters.date.kind !== DEFAULT_FILTERS.date.kind,
       Icon: CalendarDays,
       onPress: openDate,
     },

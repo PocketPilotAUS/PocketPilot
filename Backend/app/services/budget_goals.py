@@ -29,6 +29,11 @@ def deadline_for(today, amount, available):
 
 
 def assess(profile, budget, today, choices=None):
+    profile = dict(profile)
+    chosen = profile.get("monthly_contribution")
+    if chosen is not None and profile.get("target_amount") is not None:
+        remaining = max(Decimal(0), Decimal(str(profile["target_amount"])) - Decimal(str(profile.get("current_amount") or 0)))
+        profile["deadline"] = deadline_for(today, remaining, Decimal(str(chosen)))
     allocations = budget["ideal_budget"]["allocations"]
     baseline = {row["category"]: Decimal(str(row["target"])) for row in allocations}
     income = Decimal(str(budget["income"]))
@@ -59,7 +64,7 @@ def assess(profile, budget, today, choices=None):
         return result
     remaining = max(Decimal(0), Decimal(str(profile["target_amount"])) - Decimal(str(profile.get("current_amount") or 0)))
     months = (deadline.year - today.year) * 12 + deadline.month - today.month + 1
-    required = (remaining / months).quantize(Decimal(".01"), rounding=ROUND_UP)
+    required = Decimal(str(chosen)) if chosen is not None else (remaining / months).quantize(Decimal(".01"), rounding=ROUND_UP)
     gap = max(Decimal(0), required - after)
     suggested = []
     outstanding = gap

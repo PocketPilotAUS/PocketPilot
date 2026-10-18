@@ -8,6 +8,7 @@ import {
   Receipt,
   Repeat,
   ShoppingBag,
+  ShoppingCart,
   Tag,
   Utensils,
 } from "lucide-react-native";
@@ -19,6 +20,7 @@ import { useTransactionsTheme } from "./useTransactionsTheme";
 const ICONS: Record<string, typeof Tag> = {
   rent: House,
   food: Utensils,
+  groceries: ShoppingCart,
   transport: Car,
   shopping: ShoppingBag,
   subscriptions: Repeat,
@@ -30,7 +32,7 @@ const ICONS: Record<string, typeof Tag> = {
 // Fixed colour slot per known category, so a category always looks the same
 const COLOR_SLOTS: Record<string, number> = {
   rent: 0, food: 1, transport: 2, shopping: 3, bills: 4,
-  entertainment: 5, subscriptions: 6, other: 8,
+  entertainment: 5, subscriptions: 6, groceries: 7, other: 8,
 };
 
 function colorSlot(category: string, count: number): number {

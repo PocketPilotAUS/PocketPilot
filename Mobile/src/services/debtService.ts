@@ -1,6 +1,6 @@
 import { apiFetch } from "./apiClient";
 export type DebtInput = { name: string; balance: number; annual_rate: number; remaining_months: number; original_principal: number | null; automatic_day?: number | null; next_due?: string | null };
-export type Debt = DebtInput & { id: number; total_left_to_pay: number; estimated_monthly_payment: number; estimated_remaining_interest: number };
+export type Debt = DebtInput & { id: number; total_left_to_pay: number; estimated_monthly_payment: number; estimated_remaining_interest: number; repayment_plan?: { id: string; monthly_payment: number; extra_payment: number; deadline: string } };
 async function request(base: string, path: string, method = "GET", body?: object) {
   const response = await apiFetch(base, path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   if (!response.ok) {

@@ -241,7 +241,7 @@ def spending_status(db, user_id, today):
         categories.append({"category": row["category"], "budget": float(target), "spent": float(actual),
                            "upcoming": float(bills), "minimum": float(floor), "remaining": float(target - actual),
                            "forecast": float(max(floor, expected["forecast"])), "method": expected["method"], "still_needed": float(needed)})
-        if actual - target > CENT / 2:
+        if actual - target * Decimal("1.05") > CENT / 2:
             over.append({"category": row["category"], "budget": float(target), "spent": float(actual), "over": float(actual - target)})
     upcoming_total = sum((money(item["amount"]) for item in upcoming), Decimal(0))
 

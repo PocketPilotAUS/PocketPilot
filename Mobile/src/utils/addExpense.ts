@@ -1,11 +1,12 @@
 // Validation and request building for the Add expense screen. The rules,
 // messages and request bodies are the same as before the redesign.
 
-// Exact category values sent to the backend (unchanged order)
+// Category values shared by expense and budget setup pickers
 export const EXPENSE_CATEGORIES = [
   "Rent",
   "Entertainment",
   "Food",
+  "Groceries",
   "Transport",
   "Shopping",
   "Subscriptions",

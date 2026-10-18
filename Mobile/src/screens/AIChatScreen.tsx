@@ -45,6 +45,7 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onS
   const [savingProposal, setSavingProposal] = useState<string | null>(null);
   const [editingGoal, setEditingGoal] = useState<FinancialPlan | null>(null);
   const [editingGoalBusy, setEditingGoalBusy] = useState(false);
+  const [budgetApplyChoice, setBudgetApplyChoice] = useState<{ plan: FinancialPlan; index: number } | null>(null);
 
   const proposalLock = useRef(false);
   const mounted = useRef(true);
@@ -132,9 +133,12 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onS
             void session.send(prompt, undefined, choice);
           }} />}
           {!proposal && message.planningProfile && !message.goalPlanning && !message.plan?.ready && <Pressable onPress={() => { onReviewProfile(message.planningProfile!); }}><Text style={ai.composerNote}>Review proposed household and goal details</Text></Pressable>}
-          {!proposal && message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan)}
+          {!proposal && message.plan?.ready && <PlanConfirmationActions plan={message.plan} dismissed={!!message.planDeclined} busy={busy || savingProposal !== null || session.savingPlan !== null || messages.slice(index + 1).some(item => item.plan || message.plan?.debtGoalSource && item.debtState && item.debtPhase !== "review")}
             saving={session.savingPlan === index}
-            onConfirm={() => { void session.saveFinancialPlan(message.plan!, index); }}
+            onConfirm={() => {
+              if (message.plan!.debtGoalSource) setBudgetApplyChoice({ plan: message.plan!, index });
+              else { void session.saveFinancialPlan(message.plan!, index); }
+            }}
             onEdit={() => { if (message.plan!.budgetGoalSource) { setEditingGoal(message.plan!); } else { onReviewProfile(message.plan!.profile); } }}
             onDecline={() => { onMessagesChange(current => current.map((item, i) => i === index ? { ...item, planDeclined: true } : item)); }} />}
           {proposal && (
@@ -176,6 +180,18 @@ export default function AIChatScreen({ apiBaseUrl, session, onReviewProfile, onS
 
   return (
     <SafeAreaView style={ai.screen} edges={["top", "left", "right"]}>
+      <Modal visible={budgetApplyChoice !== null} animationType="fade" onRequestClose={() => setBudgetApplyChoice(null)}>
+        <SafeAreaView style={ai.screen} edges={["top", "left", "right"]}><ScrollView contentContainerStyle={ai.conversation}>
+          <BackButton label="Back to AI Chat" onPress={() => setBudgetApplyChoice(null)} />
+          <View style={styles.card}>
+            <Text style={styles.title}>Apply this repayment target to your monthly budget?</Text>
+            <Text style={styles.cardSubtitle}>Applying it updates the Debt target in Budget Tracker and shows the repayment target on your debt. It does not record a payment.</Text>
+            <Pressable accessibilityRole="button" disabled={busy || session.savingPlan !== null} style={styles.primaryButton} onPress={() => { const choice = budgetApplyChoice; setBudgetApplyChoice(null); if (choice) void session.saveFinancialPlan(choice.plan, choice.index, true); }}><Text style={styles.primaryButtonText}>Apply and save</Text></Pressable>
+            <Pressable accessibilityRole="button" disabled={busy || session.savingPlan !== null} style={[styles.secondaryButton, styles.budgetSetupAction]} onPress={() => { const choice = budgetApplyChoice; setBudgetApplyChoice(null); if (choice) void session.saveFinancialPlan(choice.plan, choice.index, false); }}><Text style={styles.secondaryButtonText}>Save plan only</Text></Pressable>
+            <Pressable accessibilityRole="button" style={[styles.secondaryButton, styles.budgetSetupAction]} onPress={() => setBudgetApplyChoice(null)}><Text style={styles.secondaryButtonText}>Cancel</Text></Pressable>
+          </View>
+        </ScrollView></SafeAreaView>
+      </Modal>
       <Modal visible={editingGoal !== null} animationType="slide" onRequestClose={() => { if (!editingGoalBusy) setEditingGoal(null); }}>
         <SafeAreaView style={ai.screen} edges={["top", "left", "right"]}><ScrollView contentContainerStyle={ai.conversation} keyboardShouldPersistTaps="handled">
           <BackButton label="Back to AI Chat" disabled={editingGoalBusy} onPress={() => setEditingGoal(null)} />

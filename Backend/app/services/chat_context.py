@@ -26,6 +26,15 @@ def intent(messages):
         return "plan"
     if re.match(r"^(?:please\s+)?save\b", text, re.I) and not re.search(r"\b(?:income|expense|transaction|contribution|into|to)\b", text, re.I):
         return "plan"
+    if len(messages) >= 3 and not WRITE.search(text):
+        from app.services.goal_dates import PATTERNS
+        lookup = QUESTION.search(text) and re.search(
+            r"\b(?:income|salary|spent|recorded|transactions|debts)\b", text, re.I) and not re.search(
+            r"\b(?:plan|feasible|afford(?:able)?|pay off|repay)\b", text, re.I)
+        continuation = (any(pattern.search(text) for pattern, _ in PATTERNS) or re.search(
+            r"\b(?:feasible|afford(?:able|ability)?|extra|per month|each month|continue|that plan|this plan)\b", text, re.I))
+        if continuation and not lookup and intent(messages[:-2]) == "plan":
+            return "plan"
     if QUESTION.search(text):
         return "read"
     if WRITE.search(text) and not re.search(r"\b(?:if|hypothetically|would have)\b", text, re.I):

@@ -735,6 +735,7 @@ export const UI_TRANSLATIONS: [string, string, string][] = [
   ["Expenses in other categories count toward Other.", "تُحتسب الفئات الأخرى ضمن «أخرى».", "其他类别的支出计入“其他”。"],
   ["Rent", "الإيجار", "房租"],
   ["Food", "الطعام", "餐饮"],
+  ["Groceries", "البقالة", "日用杂货"],
   ["Transport", "المواصلات", "交通"],
   ["Bills", "الفواتير", "账单"],
   ["Debt payments", "أقساط الديون", "债务还款"],

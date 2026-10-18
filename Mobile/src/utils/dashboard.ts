@@ -117,6 +117,7 @@ export type BudgetRow = {
   spent: number;
   // Share of the target used (1 = 100%); null without income
   ratio: number | null;
+  aboveTarget: boolean;
   over: boolean;
   overBy: number;
 };
@@ -126,7 +127,8 @@ export function buildBudgetRows(allocations: BudgetAllocation[], allConfigured =
     .filter((item) => allConfigured || item.category !== SAVINGS_CATEGORY)
     .filter((item) => allConfigured || item.percentage > 0 || item.spent > 0)
     .map((item) => {
-      const over = item.target !== null && item.spent - item.target > CENT;
+      const aboveTarget = item.target !== null && item.spent - item.target > CENT;
+      const over = item.target !== null && item.spent - item.target * 1.05 > CENT;
 
       let ratio: number | null = null;
 
@@ -140,6 +142,7 @@ export function buildBudgetRows(allocations: BudgetAllocation[], allConfigured =
         target: item.target,
         spent: item.spent,
         ratio,
+        aboveTarget,
         over,
         overBy: over && item.target !== null ? item.spent - item.target : 0,
       };
@@ -211,7 +214,7 @@ export function buildInsight(data: DashboardData | null, today: Date): Insight |
     };
   }
 
-  const rows = data.ideal_budget ? buildBudgetRows(data.ideal_budget.allocations) : [];
+  const rows = data.ideal_budget ? buildBudgetRows(data.ideal_budget.allocations, data.ideal_budget.mode === "amounts") : [];
 
   // 2. A category is over its budget (largest overspend first)
   const overRows = rows.filter((row) => row.over).sort((a, b) => b.overBy - a.overBy);
@@ -225,33 +228,14 @@ export function buildInsight(data: DashboardData | null, today: Date): Insight |
       title: `${row.category} is over budget`,
       message:
         `You've spent ${formatAED(row.spent)} on ${row.category} against a ${formatAED(row.target ?? 0)} budget, ${formatAED(row.overBy)} over.` +
-        (daysLeft !== null
+        (row.category.trim().toLowerCase() === "debt"
+          ? " Check whether this includes an extra payment or a changed instalment. Keep making required loan payments."
+          : daysLeft !== null
           ? ` Holding off on ${row.category} for the remaining ${plural(daysLeft, "day")} of ${month} will stop it rising further.`
           : "") +
         (others > 0
           ? ` ${plural(others, "other category", "other categories")} ${others === 1 ? "is" : "are"} also over budget.`
           : ""),
-    };
-  }
-
-  // 3. A category has used most of its budget
-  const nearRows = rows
-    .filter((row) => row.target !== null && row.target > 0 && row.ratio !== null && row.ratio >= 0.8)
-    .sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0));
-
-  if (nearRows.length > 0) {
-    const row = nearRows[0];
-    const target = row.target ?? 0;
-    const left = Math.max(0, target - row.spent);
-
-    return {
-      tone: "warning",
-      title: `${row.category} is close to its limit`,
-      message:
-        `${row.category} has used ${formatPercent((row.ratio ?? 0) * 100)} of its ${formatAED(target)} budget, leaving ${formatAED(left)}` +
-        (daysLeft !== null
-          ? ` for the next ${plural(daysLeft, "day")}: about ${formatAED(left / daysLeft)} a day.`
-          : "."),
     };
   }
 
@@ -263,7 +247,7 @@ export function buildInsight(data: DashboardData | null, today: Date): Insight |
 
     return {
       tone: "positive",
-      title: daysLeft !== null ? "You're within budget" : `${month} stayed within budget`,
+      title: daysLeft !== null ? "Income remaining this month" : `${month} income remaining`,
       message:
         (daysLeft !== null
           ? `You've used ${used} of your income and have ${formatAED(remaining)} left for the next ${plural(daysLeft, "day")}: about ${formatAED(remaining / daysLeft)} a day.`

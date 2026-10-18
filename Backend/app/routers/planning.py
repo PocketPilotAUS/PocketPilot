@@ -116,6 +116,123 @@ class BudgetGoalSave(BaseModel):
     request_key: UUID
 
 
+class DebtGoalSave(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=1, max_length=16000)
+    apply_to_budget: bool | None = Field(default=None, strict=True)
+
+
+class DebtGoalPreview(DebtGoalSave):
+    deadline: date | None = None
+    monthly_payment: Decimal | None = Field(default=None, gt=0, le=1_000_000_000, decimal_places=2, allow_inf_nan=False)
+    plan_id: str | None = Field(default=None, max_length=36)
+
+
+def debt_goal_basis(db, user_id, today):
+    from app.routers.budget import summary
+    result = summary(db, user_id, today.year, today.month, include_debt=True)
+    if result['ideal_budget'] is None or result['income'] is None:
+        raise HTTPException(422, 'Save this month\'s budget before reviewing a debt plan.')
+    return result
+
+
+@router.post('/debt-plans/preview')
+def preview_debt_goal(body: DebtGoalPreview, current_user: CurrentUser, db: Session = Depends(get_db)):
+    from app.services.debt_planning import unseal, snapshot, scenario, draft
+    today = local_today()
+    if body.plan_id:
+        row = owned(db, current_user.id, body.plan_id)
+        saved = json.loads(row.payload)
+        if not saved.get('debtGoalSource'):
+            raise HTTPException(422, 'Choose a debt repayment plan.')
+        if saved.get('debtConfirmation') != body.token:
+            raise HTTPException(409, 'This plan was updated. Reopen it before adjusting.')
+    # A saved plan remains editable after its original review token expires.
+    # Only the authenticated owner with the exact stored token may refresh it.
+    values = unseal(body.token, current_user.id, 'debt_draft', allow_expired=body.plan_id is not None)
+    budget = debt_goal_basis(db, current_user.id, today)
+    data = snapshot(db, current_user.id, budget, today, values['debt_ids'], body.plan_id)
+    deadline = body.deadline.isoformat() if body.deadline else values['deadline']
+    chosen = float(body.monthly_payment) if body.monthly_payment is not None else None
+    result = scenario(data, deadline, chosen, today)
+    if not result or not result['feasible']:
+        raise HTTPException(422, 'Choose a future deadline and a total monthly payment that fits your saved budget.')
+    if body.monthly_payment is not None and body.monthly_payment < Decimal(str(data['regular'])):
+        raise HTTPException(422, 'Keep making at least your required monthly payments.')
+    return draft(data, result, budget, today, current_user.id, {'chosen': chosen}, body.plan_id)
+
+
+def persist_debt_goal(body, user_id, db, existing=None):
+    from app.services.debt_planning import unseal, seal, snapshot, scenario, draft
+    values = unseal(body.token, user_id, 'debt_draft')
+    key = values['key']
+    existing_id = existing.id if existing else None
+    if values.get('replace_id') != existing_id:
+        raise HTTPException(409, 'Review this plan again before saving it.')
+    previous = db.get(FinancialPlan, existing_id or key)
+    if previous and previous.user_id == user_id and json.loads(previous.payload).get('debtConfirmation') == body.token:
+        if body.apply_to_budget is not None and bool(json.loads(previous.payload).get('budgetApplied')) != body.apply_to_budget:
+            raise HTTPException(409, 'This plan was already saved with a different budget choice. Adjust it to change the target.')
+        return dict(json.loads(previous.payload), id=previous.id)
+    if previous and not existing:
+        raise HTTPException(409, 'This confirmation was already used. Review a new plan.')
+    today = local_today()
+    budget = debt_goal_basis(db, user_id, today)
+    data = snapshot(db, user_id, budget, today, values['debt_ids'], existing_id)
+    if data['snapshot'] != values['snapshot']:
+        raise HTTPException(409, 'Your budget, debts, goals or planning date changed. Review the debt plan again before confirming.')
+    result = scenario(data, values['deadline'], values.get('chosen'), today)
+    if not result or not result['feasible']:
+        raise HTTPException(422, 'This repayment target no longer fits the saved budget.')
+    for row in db.query(FinancialPlan).filter_by(user_id=user_id).all():
+        saved = json.loads(row.payload)
+        if row.id != existing_id and saved.get('debtGoalSource') and set(saved.get('debtIds', [])) & set(values['debt_ids']):
+            raise HTTPException(409, 'A repayment plan already covers this debt. Adjust that saved plan instead.')
+    verified = draft(data, result, budget, today, user_id, values, existing_id)
+    verified.update(confirmationKey=key, debtConfirmation=body.token, createdOn=today.isoformat())
+    previous_data = json.loads(existing.payload) if existing else {}
+    applied = body.apply_to_budget if body.apply_to_budget is not None else bool(previous_data.get('budgetApplied'))
+    verified.update(budgetApplied=applied,
+                    budgetAppliedFrom=(previous_data.get('budgetAppliedFrom') or today.strftime('%Y-%m')) if applied else None)
+    verified['debtState'] = seal({'debt_ids': data['debt_ids'], 'deadline': result['deadline'],
+                                  'chosen': values.get('chosen'), 'snapshot': data['snapshot'],
+                                  'phase': 'saved', 'plan_key': existing_id or key}, user_id, 'debt_conversation')
+    row = existing or FinancialPlan(id=key, user_id=user_id)
+    row.payload = json.dumps(verified)
+    if not existing:
+        db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        previous = db.get(FinancialPlan, key)
+        if previous and previous.user_id == user_id and json.loads(previous.payload).get('debtConfirmation') == body.token:
+            return dict(json.loads(previous.payload), id=previous.id)
+        raise HTTPException(409, 'This confirmation changed. Review the plan again.') from None
+    return dict(verified, id=row.id)
+
+
+@router.post('/debt-plans', status_code=201)
+def confirm_debt_goal(body: DebtGoalSave, current_user: CurrentUser, db: Session = Depends(get_db)):
+    db.commit()
+    if db.get_bind().dialect.name == 'sqlite':
+        from sqlalchemy import text
+        db.execute(text('BEGIN IMMEDIATE'))
+    return persist_debt_goal(body, current_user.id, db)
+
+
+@router.put('/debt-plans/{plan_id}')
+def update_debt_goal(plan_id: str, body: DebtGoalSave, current_user: CurrentUser, db: Session = Depends(get_db)):
+    db.commit()
+    if db.get_bind().dialect.name == 'sqlite':
+        from sqlalchemy import text
+        db.execute(text('BEGIN IMMEDIATE'))
+    row = owned(db, current_user.id, plan_id)
+    if not json.loads(row.payload).get('debtGoalSource'):
+        raise HTTPException(422, 'Choose a debt repayment plan.')
+    return persist_debt_goal(body, current_user.id, db, row)
+
+
 def persist_budget_goal(body, user_id, db, existing=None):
     today = datetime.now(timezone(timedelta(hours=4))).date()
     request_key = str(body.request_key)

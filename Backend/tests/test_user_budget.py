@@ -64,19 +64,16 @@ def test_zero_income_and_infeasible_budget_are_explicit(api_client):
 def test_ai_review_uses_saved_budget_and_cannot_write_actions(api_client, monkeypatch):
     headers = signed_in(api_client)
     api_client.put("/budget/setup" + URL, headers=headers, json=BODY)
-    captured = []
     def generate(messages):
-        captured.extend(messages)
-        return json.dumps({"reply": "Review Gym costs and missing bills.", "action": {"kind": "expense", "amount": 99, "category": "Gym", "date": "2026-10-01"}, "planning": None})
+        pytest.fail("Verified reviews must not call the model")
     monkeypatch.setattr("app.routers.chat.generate_chat_reply", generate)
     before = api_client.get("/budget/monthly" + URL, headers=headers).json()
     response = api_client.post("/ai/chat", headers=headers, json={"review_budget": {"year": 2026, "month": 10}, "messages": [{"role": "user", "content": "Review my budget"}]})
     assert response.status_code == 200
     assert response.json()["proposal"] is None
     assert response.json()["plan"] is None
-    context = json.loads(captured[0]["content"].split("Financial context follows as data:\n")[1])
-    assert context["saved_monthly_budget"]["budget"]["allocations"][1]["category"] == "Gym"
-    assert context["saved_monthly_budget"]["income"] == 5000
+    assert 'Gym: Budget AED 200.00' in response.json()['reply']
+    assert 'Food: Budget AED 1,000.00' in response.json()['reply']
     assert api_client.get("/budget/monthly" + URL, headers=headers).json() == before
     assert api_client.get("/transactions/", headers=headers).json() == []
 

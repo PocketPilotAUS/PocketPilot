@@ -28,7 +28,7 @@ export default function BudgetPlanEditor({ plan, apiBaseUrl, onPreview, onCancel
     const profile = { ...plan.profile, goal: goal.trim(), target_amount: toAED(target, plan.targetAmount), current_amount: toAED(progress, entered), monthly_contribution: byDeadline ? null : toAED(monthly, plan.monthlyContribution), deadline: byDeadline ? deadline : plan.deadline };
     locked.current = true; setBusy(true); onBusyChange(true); setError("");
     try {
-      const response = await apiFetch(apiBaseUrl, "/planning/budget-plans/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile, choices: plan.budgetChoices ?? {}, budget_fingerprint: plan.budgetFingerprint, request_key: plan.confirmationKey }) });
+      const response = await apiFetch(apiBaseUrl, plan.debtGoalSource ? "/planning/debt-plans/preview" : "/planning/budget-plans/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(plan.debtGoalSource ? { token: plan.debtConfirmation, plan_id: plan.id, deadline: byDeadline ? deadline : null, monthly_payment: byDeadline ? null : toAED(monthly, plan.monthlyContribution) } : { profile, choices: plan.budgetChoices ?? {}, budget_fingerprint: plan.budgetFingerprint, request_key: plan.confirmationKey }) });
       const value = await response.json();
       if (!response.ok) throw new Error(typeof value.detail === "string" ? value.detail : "Check your goal amounts and date.");
       onPreview(value);
@@ -37,11 +37,13 @@ export default function BudgetPlanEditor({ plan, apiBaseUrl, onPreview, onCancel
   };
   const field = (label: string, value: string, change: (value: string) => void, money = true) => <View style={s.editor}><Text style={s.editorLabel}>{label}</Text><View style={s.inputRow}>{money && <Text style={s.inputPrefix}>{currencyCode()}</Text>}<TextInput editable={!busy} accessibilityLabel={label} style={s.input} value={value} onChangeText={change} keyboardType={money ? "decimal-pad" : "default"} placeholderTextColor={palette.textMuted} maxLength={money ? 18 : 200} /></View></View>;
   return <View style={s.card}>
-    {field("Goal", goal, setGoal, false)}
-    {field("Target amount", target, setTarget)}
-    {field("Already saved for this goal", progress, setProgress)}
-    <Pressable disabled={busy} onPress={() => setByDeadline(value => !value)} style={s.secondaryButton}><Text style={s.secondaryButtonText}>{byDeadline ? "Choose a monthly saving amount" : "Choose a target deadline"}</Text></Pressable>
-    {byDeadline ? field("Target date (YYYY-MM-DD)", deadline, setDeadline, false) : field("Monthly saving amount", monthly, setMonthly)}
+    {plan.debtGoalSource ? <Text localize={false} style={s.editorLabel}>{plan.title}</Text> : <>
+      {field("Goal", goal, setGoal, false)}
+      {field("Target amount", target, setTarget)}
+      {field("Already saved for this goal", progress, setProgress)}
+    </>}
+    <Pressable disabled={busy} onPress={() => setByDeadline(value => !value)} style={s.secondaryButton}><Text style={s.secondaryButtonText}>{byDeadline ? plan.debtGoalSource ? "Choose a monthly debt payment" : "Choose a monthly saving amount" : "Choose a target deadline"}</Text></Pressable>
+    {byDeadline ? field("Target date (YYYY-MM-DD)", deadline, setDeadline, false) : field(plan.debtGoalSource ? "Total monthly debt payment" : "Monthly saving amount", monthly, setMonthly)}
     {!!error && <Text style={s.formError} accessibilityRole="alert">{error}</Text>}
     <View style={s.buttonRow}><Pressable disabled={busy} onPress={onCancel} style={s.secondaryButton}><Text style={s.secondaryButtonText}>Cancel</Text></Pressable><Pressable disabled={busy} onPress={() => { void preview(); }} style={[s.primaryButton, busy && s.buttonDisabled]}><Text style={s.primaryButtonText}>{busy ? "Reviewing…" : "Review plan"}</Text></Pressable></View>
   </View>;

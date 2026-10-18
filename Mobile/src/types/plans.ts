@@ -35,6 +35,18 @@ export type PlanningProfile = {
 export type FinancialPlan = {
   // Karim's budget-goal confirmation fields
   budgetGoalSource?: boolean;
+  debtGoalSource?: boolean;
+  debtConfirmation?: string;
+  debtState?: string;
+  extraMonthly?: number;
+  regularMonthly?: number;
+  leftAfterGoal?: number;
+  debtIds?: number[];
+  estimatedPrincipal?: number;
+  estimatedInterest?: number;
+  estimatedInterestSaved?: number;
+  originalScheduleTotal?: number;
+  estimatedFinalPayment?: number;
   confirmationKey?: string;
   draftFingerprint?: string;
   budgetFingerprint?: string;

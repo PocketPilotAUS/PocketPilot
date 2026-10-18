@@ -12,7 +12,13 @@ export const getPlanningContext = (base: string) => planningRequest<PlanningCont
 export const getPlans = (base: string) => planningRequest<FinancialPlan[]>(base, "/plans");
 export const savePlan = (base: string, profile: PlanningProfile, id?: string) => planningRequest<FinancialPlan>(base, id ? `/plans/${id}` : "/plans", id ? "PUT" : "POST", profile);
 
-export async function confirmBudgetPlan(base: string, plan: FinancialPlan, id?: string): Promise<FinancialPlan> {
+export async function confirmBudgetPlan(base: string, plan: FinancialPlan, id?: string, applyToBudget?: boolean): Promise<FinancialPlan> {
+  if (plan.debtGoalSource) {
+    const response = await apiFetch(base, id ? `/planning/debt-plans/${id}` : "/planning/debt-plans", { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: plan.debtConfirmation, apply_to_budget: applyToBudget }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Could not confirm debt plan. Please review it again.");
+    return data;
+  }
   const response = await apiFetch(base, id ? `/planning/budget-plans/${id}` : "/planning/budget-plans", { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile: plan.profile, choices: plan.budgetChoices ?? {}, budget_fingerprint: plan.budgetFingerprint, request_key: plan.confirmationKey }) });
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(typeof data.detail === "string" ? data.detail : "Could not confirm plan. Please try again."); }
   return response.json();

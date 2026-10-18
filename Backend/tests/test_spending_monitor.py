@@ -150,3 +150,12 @@ def test_no_proposal_without_need_or_when_ai_fails(api_client, db_session, monke
     headers, _ = account(api_client, db_session, *SCENARIO_A, email="bob@example.com")
     review = api_client.post("/planning/adjustments/proposal", headers=headers, json={})
     assert review.status_code == 200 and review.json()["tips"] == [] and review.json()["affordability"]["left_after_savings"] == 2700
+
+
+@pytest.mark.parametrize("spent, flagged", [(500, False), (500.01, False), (525, False), (525.01, True)])
+def test_category_warning_requires_more_than_five_percent(api_client, db_session, spent, flagged):
+    headers, _ = account(api_client, db_session, {"Shopping":500}, {"Shopping":spent}, goal=0)
+    data = status(api_client, headers)
+    assert bool(data["over_budget"]) is flagged
+    assert data["level"] == (1 if flagged else 0)
+    assert data["recorded_spending"] == spent

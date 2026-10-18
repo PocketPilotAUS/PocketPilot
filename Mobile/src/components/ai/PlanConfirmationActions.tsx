@@ -12,17 +12,21 @@ import type { FinancialPlan } from "../../types/plans";
 function PlanSummary({ plan }: { plan: FinancialPlan }) {
   const { palette } = useAITheme();
   const p = createPlanningStyles(palette);
-  const metric = (label: string, value: string) => <View style={p.metric}><Text style={p.metricLabel}>{label}</Text><Text localize={false} style={p.metricValue}>{value}</Text></View>;
+  const metric = (label: string, value: string) => <View style={p.metric}><Text style={p.metricLabel}>{label}</Text><Text style={p.metricValue}>{value}</Text></View>;
   return <View style={{ marginTop: 12 }}>
     <Text style={p.planEyebrow}>{plan.id ? "SAVED PLAN" : "DRAFT PLAN"}</Text>
     <Text localize={false} style={p.title}>{plan.title}</Text>
     <View style={p.metricGrid}>
-      {metric("Goal amount", formatAED(plan.targetAmount))}
-      {metric("Monthly saving", formatAED(plan.monthlyContribution))}
+      {metric(plan.debtGoalSource ? "Estimated total repayment" : "Goal amount", formatAED(plan.targetAmount))}
+      {metric(plan.debtGoalSource ? "Monthly debt payment" : "Monthly saving", formatAED(plan.monthlyContribution))}
+      {plan.debtGoalSource && metric("Extra above regular payment", formatAED(plan.extraMonthly ?? 0))}
+      {plan.debtGoalSource && plan.estimatedInterest != null && metric("Estimated remaining interest", formatAED(plan.estimatedInterest))}
+      {plan.debtGoalSource && plan.estimatedInterestSaved != null && metric("Estimated interest saved", formatAED(plan.estimatedInterestSaved))}
       {plan.months != null && metric("Months", String(plan.months))}
       {plan.deadline && metric("Target date", formatPlanningDate(plan.deadline))}
-      {metric("Left after goal", formatAED(plan.availableAfter))}
+      {metric("Left after goal", formatAED(plan.debtGoalSource ? plan.leftAfterGoal ?? 0 : plan.availableAfter))}
     </View>
+    {plan.debtGoalSource && plan.estimatedInterestSaved != null && <Text style={p.caption}>Fixed-rate estimate; fees and lender-specific adjustments are excluded.</Text>}
   </View>;
 }
 

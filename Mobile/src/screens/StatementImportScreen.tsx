@@ -4,36 +4,41 @@ import { Alert, Text, TextInput, View } from "../preferences/LocalizedNative";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
-import { Check, FileUp, X } from "lucide-react-native";
-import { useDashboardTheme } from "../components/dashboard/useDashboardTheme";
+import { Check, FileUp, Pencil, TriangleAlert, X } from "lucide-react-native";
+import { useTransactionsTheme } from "../components/transactions/useTransactionsTheme";
+import CategoryIcon from "../components/transactions/CategoryIcon";
+import { dayGroupLabel, formatShortDate } from "../utils/transactions";
+import { groupStatementRows, includedStatementRows, needsStatementReview, prepareStatementRow, ReviewedStatementRow } from "../utils/statementReview";
 import { createStatementImportStyles } from "../styles/StatementImportStyles";
 import { formatAED } from "../utils/dashboard";
 import { formatPlanningDate } from "../utils/planningDate";
 import { Currency, ExchangeRate, getCurrencyPreference } from "../preferences/currency";
 import CurrencyNotice from "../components/CurrencyNotice";
 import { loadYuanRate } from "../services/currencyService";
-import { confirmStatement, previewStatement, StatementPreview, StatementRow } from "../services/statementService";
+import { confirmStatement, previewStatement, StatementPreview } from "../services/statementService";
 import { SessionExpiredError } from "../services/apiClient";
 
-type ReviewedRow = StatementRow & { selected: boolean };
+type ReviewedRow = ReviewedStatementRow;
 type Props = { apiBaseUrl: string; budgetCategories?: string[]; onClose: () => void; onBusyChange: (busy: boolean) => void; onImported: () => void };
 
 export default function StatementImportScreen({ apiBaseUrl, budgetCategories = [], onClose, onBusyChange, onImported }: Props) {
-  const { styles, palette } = useDashboardTheme();
+  const { styles, palette, tx } = useTransactionsTheme();
   const s = createStatementImportStyles(palette);
   const [currency, setCurrency] = useState<Currency | null>(null);
   const [dateOrder, setDateOrder] = useState<"DMY" | "MDY">("DMY");
   const [amountStyle, setAmountStyle] = useState<"negative_debits" | "positive_debits">("negative_debits");
   const [preview, setPreview] = useState<StatementPreview | null>(null);
   const [rows, setRows] = useState<ReviewedRow[]>([]);
+  const [editingRow, setEditingRow] = useState<number | null>(null);
   const [filename, setFilename] = useState("");
   const [statementRate, setStatementRate] = useState<ExchangeRate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const setWorking = (value: boolean) => { lock.current = value; setBusy(value); onBusyChange(value); };
-  const chosen = rows.filter(row => row.selected && row.kind === "expense" && row.direction === "debit");
-  const total = chosen.reduce((sum, row) => sum + Number(row.amount_aed), 0);
+  const chosen = includedStatementRows(rows);
+  const reviewRows = rows.filter(needsStatementReview);
+  const groups = groupStatementRows(rows.filter(row => !needsStatementReview(row)));
   const update = (id: number, patch: Partial<ReviewedRow>) => setRows(current => current.map(row => row.row_id === id ? { ...row, ...patch } : row));
 
   const pick = async () => {
@@ -52,7 +57,7 @@ export default function StatementImportScreen({ apiBaseUrl, budgetCategories = [
       const rate = currency === "CNY" ? cached ?? await loadYuanRate(null) : null;
       const data = await previewStatement(apiBaseUrl, { csv_text: csvText, currency, date_order: dateOrder, amount_style: amountStyle, ...(rate ? { aed_to_cny: rate.aedToCny } : {}), categories: budgetCategories });
       setFilename(asset.name); setPreview(data); setStatementRate(rate);
-      setRows(data.rows.map(row => ({ ...row, selected: row.kind === "expense" && row.direction === "debit" && !row.possible_duplicate })));
+      setRows(data.rows.map(prepareStatementRow)); setEditingRow(null);
     } catch (err) {
       if (!(err instanceof SessionExpiredError)) setError(err instanceof Error && err.name !== "AbortError" ? err.message : "Reading the statement took too long. Try again; nothing was saved.");
     } finally {
@@ -72,6 +77,43 @@ export default function StatementImportScreen({ apiBaseUrl, budgetCategories = [
     } catch (err) {
       if (!(err instanceof SessionExpiredError)) setError(err instanceof Error && err.name !== "AbortError" ? err.message : "Could not confirm the import. Retry to check the result; exact duplicates will be skipped.");
     } finally { setWorking(false); }
+  };
+  const finishEdit = (row: ReviewedRow) => {
+    if (row.direction === "debit" && row.kind === "expense" && row.selected && !row.category.trim()) { setError("Choose a category for this expense before finishing."); return; }
+    update(row.row_id, { reviewed: true }); setEditingRow(null); setError("");
+  };
+  const renderRow = (row: ReviewedRow, index: number) => {
+    const uncertain = needsStatementReview(row);
+    const editing = editingRow === row.row_id;
+    const included = chosen.some(item => item.row_id === row.row_id);
+    return <View key={row.row_id} style={index > 0 ? tx.rowDivider : undefined}>
+      <View style={tx.row}>
+        <CategoryIcon category={row.kind === "expense" ? row.category || "Other" : "Other"} />
+        <View style={tx.rowText}>
+          <Text style={tx.rowTitle} numberOfLines={1}>{row.kind === "expense" ? row.category || "Uncategorized" : row.kind === "transfer" ? "Transfer" : row.direction === "credit" ? "Money in" : "Uncategorized"}</Text>
+          <Text style={tx.rowSubtitle} numberOfLines={1}>{formatShortDate(row.date)}<Text localize={false}> - {row.description}</Text></Text>
+          {uncertain ? <View style={s.reviewLabel}><TriangleAlert size={12} color={palette.danger} /><Text style={s.reviewText}>Needs review</Text></View> : !included && <Text style={tx.rowSubtitle}>Not imported</Text>}
+        </View>
+        <Text style={tx.rowAmount}>{formatAED(Number(row.amount_aed))}</Text>
+        <Pressable disabled={busy} onPress={() => setEditingRow(editing ? null : row.row_id)} style={s.editButton} accessibilityRole="button" accessibilityLabel={`Edit ${row.description}`} accessibilityState={{ expanded: editing }}><Pencil size={15} color={palette.textSecondary} /></Pressable>
+      </View>
+      {uncertain && !editing && <Text style={s.reviewReason}>{row.issues.join(" ")}</Text>}
+      {editing && <View style={s.editor}>
+        <Text localize={false} style={s.title}>{row.description}</Text>
+        <Text style={s.text}>{formatPlanningDate(row.date)} - {formatAED(Number(row.amount_aed))}</Text>
+        <Text localize={false} style={s.text}>{row.source_currency} {row.source_amount} - {row.direction === "debit" ? "Money out" : "Money in"}</Text>
+        {uncertain && <Text style={s.warning}>{row.issues.join(" ")}</Text>}
+        {row.direction === "debit" ? <>
+          <View style={s.options}>{(["expense", "transfer", "review"] as const).map(kind => <Pressable key={kind} disabled={busy} accessibilityRole="radio" accessibilityState={{ checked: row.kind === kind }} onPress={() => update(row.row_id, { kind, selected: kind === "expense" && !row.possible_duplicate })} style={[s.option, row.kind === kind && s.selected]}><Text style={s.text}>{kind === "expense" ? "Expense" : kind === "transfer" ? "Transfer" : "Skip"}</Text></Pressable>)}</View>
+          {row.kind === "expense" && <>
+            <Text style={s.title}>Category</Text>
+            <TextInput style={s.input} value={row.category} onChangeText={category => update(row.row_id, { category })} maxLength={40} editable={!busy} accessibilityLabel={`Category for row ${row.row_id}`} />
+            <Pressable disabled={busy} accessibilityRole="checkbox" accessibilityState={{ checked: row.selected }} onPress={() => update(row.row_id, { selected: !row.selected })} style={[s.option, row.selected && s.selected]}><Text style={s.title}>{row.selected ? "Selected for import" : "Include this expense"}</Text></Pressable>
+          </>}
+        </> : <Text style={s.text}>Incoming money is not imported as spending.</Text>}
+        <Pressable disabled={busy} onPress={() => finishEdit(row)} style={s.button} accessibilityRole="button"><Text style={s.buttonText}>Done</Text></Pressable>
+      </View>}
+    </View>;
   };
   return <SafeAreaView style={styles.screen} edges={["top", "bottom", "left", "right"]}>
     <View style={[styles.header, s.header]}>
@@ -97,34 +139,26 @@ export default function StatementImportScreen({ apiBaseUrl, budgetCategories = [
         </View> : <>
           <View style={s.card}>
             <Text localize={false} style={s.title}>{filename}</Text>
-            <Text style={s.text}>Review every row before importing. This version adds expenses only. Income, credits and transfers are not imported.</Text>
-            <Text style={s.text}>Exact matches on date, amount and description are skipped when saving, including repeated imports.</Text>
+            <Text style={s.text}>Tap a pencil to edit an entry. Check flagged entries before including them. Nothing is saved until you import.</Text>
+            <Text style={s.text}>Income and transfers are excluded. Exact duplicates are skipped when saving.</Text>
             {!!statementRate && <CurrencyNotice always rateOverride={statementRate} />}
-            {!preview.ai_available && <Text style={s.warning}>AI suggestions are unavailable. Label debit rows manually; nothing has been saved.</Text>}
+            {!preview.ai_available && <Text style={s.warning}>AI suggestions are unavailable. Clear descriptions were categorized automatically; review the flagged entries. Nothing has been saved.</Text>}
             {!!preview.errors.length && <Text style={s.warning}>{preview.errors.length} invalid rows were skipped.</Text>}
             {preview.errors.map(item => <Text key={item.row_id} style={s.text}>Row {item.row_id}: {item.message}</Text>)}
-            <Pressable disabled={busy} onPress={() => { setPreview(null); setRows([]); setError(""); }} accessibilityRole="button"><Text style={s.title}>Choose another statement</Text></Pressable>
+            <Pressable disabled={busy} onPress={() => { setPreview(null); setRows([]); setEditingRow(null); setError(""); }} accessibilityRole="button"><Text style={s.title}>Choose another statement</Text></Pressable>
           </View>
-          {rows.map(row => <View key={row.row_id} style={s.card}>
-            <Text localize={false} style={s.title}>{row.description}</Text>
-            <Text style={s.text}>{formatPlanningDate(row.date)} · {formatAED(Number(row.amount_aed))}</Text>
-            <Text localize={false} style={s.text}>{`${row.source_currency} ${row.source_amount} · ${row.direction === "debit" ? "Money out" : "Money in"}`}</Text>
-            {row.possible_duplicate && <Text style={s.warning}>Possible duplicate. Include only if this is a separate expense.</Text>}
-            <Text style={s.text}>{row.kind === "expense" ? "Expense" : row.kind === "income" ? "Income or credit · not imported" : row.kind === "transfer" ? "Transfer · not imported" : "Needs your review"}</Text>
-            {row.direction === "debit" && <>
-              <View style={s.options}>{(["expense", "transfer", "review"] as const).map(kind => <Pressable key={kind} disabled={busy} accessibilityRole="radio" accessibilityState={{ checked: row.kind === kind }} onPress={() => update(row.row_id, { kind, selected: kind === "expense" && !row.possible_duplicate })} style={[s.option, row.kind === kind && s.selected]}><Text style={s.text}>{kind === "expense" ? "Expense" : kind === "transfer" ? "Transfer" : "Skip"}</Text></Pressable>)}</View>
-              {row.kind === "expense" && <>
-                <Text style={s.title}>Category</Text>
-                <TextInput style={s.input} value={row.category} onChangeText={category => update(row.row_id, { category })} maxLength={40} editable={!busy} accessibilityLabel={`Category for row ${row.row_id}`} />
-                <Pressable disabled={busy} accessibilityRole="checkbox" accessibilityState={{ checked: row.selected }} onPress={() => update(row.row_id, { selected: !row.selected })} style={[s.option, row.selected && s.selected]}><Text style={s.title}>{row.selected ? "✓ Selected for import" : "Include this expense"}</Text></Pressable>
-              </>}
-            </>}
+          {!!reviewRows.length && <View>
+            <View style={tx.groupHeader}><Text style={tx.groupTitle}>Needs review</Text></View>
+            <View style={tx.groupCard}>{reviewRows.map(renderRow)}</View>
+          </View>}
+          {groups.map(group => <View key={group.date}>
+            <View style={tx.groupHeader}><Text style={tx.groupTitle}>{dayGroupLabel(group.date, new Date())}</Text></View>
+            <View style={tx.groupCard}>{group.rows.map(renderRow)}</View>
           </View>)}
         </>}
       </ScrollView>
       {preview && <View style={s.footer}>
-        <Text style={s.title}>{chosen.length} selected · {formatAED(total)}</Text>
-        <Pressable disabled={busy || !chosen.length} onPress={() => { void save(); }} style={[s.button, (busy || !chosen.length) && s.muted]} accessibilityRole="button" accessibilityLabel="Confirm selected expenses">{busy ? <ActivityIndicator color={palette.onAccent} /> : <Check size={20} color={palette.onAccent} />}<Text style={s.buttonText}>{busy ? "Importing…" : "Confirm selected expenses"}</Text></Pressable>
+        <Pressable disabled={busy || !chosen.length} onPress={() => { void save(); }} style={[s.button, (busy || !chosen.length) && s.muted]} accessibilityRole="button" accessibilityLabel={`Import ${chosen.length} transactions`}>{busy ? <ActivityIndicator color={palette.onAccent} /> : <Check size={20} color={palette.onAccent} />}<Text style={s.buttonText}>{busy ? "Importing…" : `Import ${chosen.length} ${chosen.length === 1 ? "transaction" : "transactions"}`}</Text></Pressable>
       </View>}
     </KeyboardAvoidingView>
   </SafeAreaView>;

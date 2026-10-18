@@ -89,6 +89,7 @@ def with_debt_budget(db, user_id, year, month, income, categories, budget):
     from sqlalchemy import func
     from app.services.debt_schedule import totals
     target = Decimal(0)
+    regulars = {}
     for debt in debts:
         remaining, fixed = totals(db, debt)
         # Keep this month's target after its payment is made, including payoff.
@@ -99,13 +100,18 @@ def with_debt_budget(db, user_id, year, month, income, categories, budget):
         earlier = db.query(func.coalesce(func.sum(DebtPayment.applied_cents), 0)).filter(
             DebtPayment.user_id == user_id, DebtPayment.debt_id == debt.id,
             DebtPayment.paid_on < date(year, month, 1)).scalar()
-        target += Decimal(min(fixed, max(0, baseline - earlier))) / 100
+        opening = Decimal(max(0, baseline - earlier)) / 100
+        regulars[debt.id] = (Decimal(min(fixed, max(0, baseline - earlier))) / 100, opening)
+    from app.services.debt_targets import applied_targets
+    targets, extras, _ = applied_targets(db, user_id, year, month, regulars)
+    target = sum(targets.values(), Decimal(0))
     result = dict(budget or {"customized": False, "mode": "amounts", "allocations": []})
     allocations = [dict(row) for row in result["allocations"] if row["category"].strip().casefold() != "debt"]
     actual = sum((value for key, value in categories.items() if key.strip().casefold() == "debt"), Decimal(0))
     allocations.append({"category": "Debt", "target": float(target), "spent": float(actual),
                         "percentage": float(target / income * 100) if income else 0, "automatic": True})
     result["allocations"] = allocations
+    result['debt_plan_extras'] = extras
     result["unbudgeted"] = [row for row in result.get("unbudgeted", []) if row["category"].strip().casefold() != "debt"]
     total = sum((Decimal(str(row["target"])) for row in allocations if row["target"] is not None), Decimal(0))
     result.update(planned_total=float(total), planned_remaining=float(income - total) if income is not None else None)

@@ -228,3 +228,27 @@ def test_intent_boundaries(text, expected):
     from app.routers.chat import Message
     from app.services.chat_context import intent
     assert intent([Message(role="user", content=text)]) == expected
+
+
+@pytest.mark.parametrize("action", [None, {"kind": "expense", "amount": 566.14},
+    {"kind": "expense", "amount": 566.14, "category": "Debt", "date": "2026-10-18"}])
+def test_debt_plan_keeps_advice_and_ignores_transaction_action(api_client, monkeypatch, db_session, action):
+    headers = account(api_client)
+    setup(api_client, headers)
+    created = api_client.post("/debts", headers=headers, json={
+        "name": "Car loan", "balance": 12000, "annual_rate": 0, "remaining_months": 12})
+    assert created.status_code == 201
+    monkeypatch.setattr("app.routers.chat.extract_goal_facts", lambda _: "{}")
+    monkeypatch.setattr('app.services.debt_planning.interpret_debt_turn', lambda *_: json.dumps({'intent':'discuss'}))
+    monkeypatch.setattr('app.services.debt_planning.generate_chat_reply', lambda *_: (_ for _ in ()).throw(ValueError('Exercise fallback')))
+    answer = "Your Car loan has AED 12,000 left and a monthly payment of AED 1,000. How much extra could you comfortably pay each month?"
+    captured = mock_reply(monkeypatch, action, answer)
+    result = ask(api_client, headers, "Help me make a plan to pay off my debt faster.")
+    assert "saved budget" in result["reply"]
+    assert "AED 12,000.00" in result["reply"]
+    assert "AED 1,000.00" in result["reply"]
+    assert result["proposal"] is None and result["plan"] is None
+    assert db_session.query(ChatProposal).count() == 0
+    assert db_session.query(FinancialPlan).count() == 0
+    assert captured == []
+    assert api_client.get("/transactions/", headers=headers).json() == []

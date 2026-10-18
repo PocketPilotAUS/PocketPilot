@@ -56,7 +56,7 @@ def preview(body: PreviewInput, current_user: CurrentUser, db: Session = Depends
         labels, ai_available = [], False
     dates = [date.fromisoformat(row["date"]) for row in rows]
     existing = [{"date": row.date.isoformat(), "amount_aed": row.amount, "description": row.description or ""} for row in db.query(Transaction).filter(Transaction.user_id == current_user.id, Transaction.date >= min(dates), Transaction.date <= max(dates)).all()]
-    reviewed = review_rows(rows, labels, existing)
+    reviewed = review_rows(rows, labels, existing, categories)
     now = datetime.now(timezone.utc)
     token = jwt.encode({"sub": str(current_user.id), "type": "statement_preview", "iat": now, "exp": now + timedelta(minutes=20), "rows": reviewed}, get_jwt_secret_key(), algorithm=JWT_ALGORITHM)
     return {"preview_token": token, "rows": reviewed, "errors": errors, "ai_available": ai_available, "categories": categories}
