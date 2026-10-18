@@ -31,12 +31,17 @@ Authentication routes register/login/refresh/logout and health are not Bearer-pr
 | POST | `/planning/plans` | `PlanningInput` | - |
 | PUT | `/planning/plans/{plan_id}` | `PlanningInput` | - |
 | DELETE | `/planning/plans/{plan_id}` | `-` | - |
+| POST | `/planning/debt-plans/preview` | `DebtGoalPreview` | - |
+| POST | `/planning/debt-plans` | `DebtGoalSave` | - |
+| PUT | `/planning/debt-plans/{plan_id}` | `DebtGoalSave` | - |
 | POST | `/planning/budget-plans` | `BudgetGoalSave` | - |
 | PUT | `/planning/budget-plans/{plan_id}` | `BudgetGoalSave` | - |
 | POST | `/planning/budget-plans/preview` | `BudgetGoalSave` | - |
 | GET | `/planning/status` | `-` | - |
 | POST | `/planning/adjustments/proposal` | `AdjustmentRequest` | - |
 | POST | `/planning/adjustments/accept` | `AdjustmentAccept` | - |
+| POST | `/planning/reviews/{review_id}/reject` | `-` | - |
+| POST | `/planning/reviews/{review_id}/accept` | `ReviewAccept` | - |
 | POST | `/transactions/import/preview` | `PreviewInput` | - |
 | POST | `/transactions/import/confirm` | `ConfirmInput` | - |
 | GET | `/debts/payments` | `-` | - |
@@ -69,3 +74,13 @@ Authentication routes register/login/refresh/logout and health are not Bearer-pr
 - Transaction CRUD is add/list/delete only. There is no generic update endpoint or AI savings-contribution write.
 
 See [AI Chat](budget-goal-chat.md), [planning](financial-planning.md), [budgets](user-budgets.md), [debts](debts.md), [savings](savings.md) and [CSV import](statement-import.md).
+
+## Current chat and plan contracts
+
+ChatRequest carries messages plus optional signed record_state/debt_state, goal/profile context, currency/rate, active_proposal_id, proposal_ids and plan_review_ids. IDs are owner-verified; references are limited to IDs supplied by that conversation. ChatResponse separates proposal/proposal_updates from plan/plan_updates. Read-only or ambiguous turns do not create recording proposals.
+
+Ready Financial Plans include reviewId/reviewStatus. Common acceptance uses stored reviewed facts. ReviewAccept supports optional apply_to_budget and plan_id for supported flows, not arbitrary replacement amounts. Reviews enforce owner, 30-minute expiry, terminal status and concurrency guards. Original budget/debt endpoints also enforce registered capability state and stale snapshots.
+
+Preview may persist review metadata while saving no FinancialPlan, deposit or transaction. Saving /planning/profile explicitly persists inputs. Manual guided CRUD and monitoring adjustment acceptance remain separate supported operations.
+
+Typical errors: 401 authentication, 404 unknown/foreign resources, 409 stale/conflicting/terminal capabilities, 422 invalid fields/signed drafts. Consult live OpenAPI for endpoint-specific responses; these are not universal code rules.

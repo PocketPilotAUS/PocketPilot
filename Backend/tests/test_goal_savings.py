@@ -97,7 +97,12 @@ def test_adjusted_plan_keeps_assigned_savings(api_client, monkeypatch):
     add(api_client, headers, 500, goal_id)
     plan = goal(api_client, headers)
     profile = dict(plan['profile'], deadline='2027-09-30')
-    updated = api_client.put(f'/planning/budget-plans/{goal_id}', headers=headers, json={'profile': profile, 'choices': {}, 'budget_fingerprint': plan['budgetFingerprint'], 'request_key': str(uuid4())})
+    reviewed = api_client.post('/planning/budget-plans/preview',headers=headers,json={'profile':profile,'choices':{},
+        'budget_fingerprint':plan['budgetFingerprint'],'request_key':str(uuid4())})
+    assert reviewed.status_code==200,reviewed.text
+    draft=reviewed.json()
+    updated = api_client.put(f'/planning/budget-plans/{goal_id}', headers=headers, json={'profile':draft['profile'],
+        'choices':draft['budgetChoices'],'budget_fingerprint':draft['budgetFingerprint'],'request_key':draft['confirmationKey']})
     assert updated.status_code == 200 and updated.json()['savedAmount'] == 500
     assert goal(api_client, headers)['savedAmount'] == 500
 

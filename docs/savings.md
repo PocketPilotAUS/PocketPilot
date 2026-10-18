@@ -9,3 +9,9 @@ Manual contributions support create, edit and delete with amount, label and opti
 Confirmation is unique per user/month and updates that month's snapshot on repeat confirmation. Later ledger edits do not silently rewrite an already confirmed month. Contributions are separate from the month-end snapshot; enter values deliberately to avoid representing the same savings twice.
 
 Missing goal-assignment columns require an inspected additive migration, not a reset. See [database maintenance](database.md). AI Chat can describe scoped goals and contributions, but recording a savings contribution uses this dedicated workflow rather than pretending it is an expense.
+
+## Goal proposals versus actual savings
+
+Savings affordability is informational and creates no acceptable plan without a grounded goal/target. Natural contribution follow-ups can refine a named goal, but a new chat cannot inherit an unrelated goal. A monthly contribution is never classified as income simply because it is a monetary amount.
+
+Ready plans use the durable acceptance/rejection lifecycle in [Financial Plans](financial-planning.md). Accepting a goal saves its target and planned monthly contribution without income, expense or completed-savings entries. Manual contributions and completed-month confirmation remain separate explicit operations. The plan card distinguishes Available before savings from Remaining after monthly savings; see that guide for formulas and debt double-counting rules.

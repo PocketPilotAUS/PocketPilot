@@ -2,7 +2,7 @@ import { StyleSheet } from "react-native";
 import type { DashboardPalette } from "./DashboardStyles";
 import { createLoginStyles } from "./LoginStyles";
 
-export const createWelcomeStyles = (palette: DashboardPalette) => {
+export const createWelcomeStyles = (palette: DashboardPalette, logoSize = 176) => {
   const login = createLoginStyles(palette);
 
   return StyleSheet.create({
@@ -15,7 +15,17 @@ export const createWelcomeStyles = (palette: DashboardPalette) => {
       paddingVertical: 32,
     },
     logo: {
-      marginBottom: 24,
+      width: logoSize,
+      height: logoSize,
+      flexShrink: 0,
+      overflow: "visible",
+      marginBottom: 20,
+    },
+    logoImage: {
+      // Override both intrinsic asset dimensions; aspectRatio alone retains its height.
+      width: logoSize,
+      height: logoSize,
+      aspectRatio: 1,
     },
     body: {
       alignItems: "center",
@@ -32,17 +42,18 @@ export const createWelcomeStyles = (palette: DashboardPalette) => {
       fontWeight: "600",
       lineHeight: 22,
       textAlign: "center",
-      marginBottom: 16,
-    },
-    description: {
-      ...login.subtitle,
-      textAlign: "center",
-      marginBottom: 32,
+      marginBottom: 28,
     },
     welcomeButtonContainer: {
-      width: "100%",
+      width: "70%",
+      alignSelf: "center",
     },
-    button: login.submitButton,
+    button: {
+      ...login.submitButton,
+      flex: 0,
+      minHeight: 48,
+      paddingVertical: 12,
+    },
     pressed: login.pressed,
   });
 };

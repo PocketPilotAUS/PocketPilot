@@ -18,12 +18,12 @@ def unsupported_operation(text):
     return None
 
 
-def recording_text(messages):
+def recording_text(messages, continuation=None):
     text = messages[-1].content
     # Mobile appends display-currency metadata; it is not a user date.
     text = re.sub(r"\n\[Currency for untagged amounts[^\n]*\]", "", text).strip()
     from app.services.chat_context import intent, WRITE
-    if len(messages) >= 3 and not WRITE.search(text) and intent(messages) == "record":
+    if len(messages) >= 3 and (continuation is True or continuation is None and not WRITE.search(text) and intent(messages) == "record"):
         text = messages[-3].content + " " + text
     return text
 
@@ -42,11 +42,11 @@ def explicit_dates(text):
     return values
 
 
-def normalize_action(raw, messages, today):
+def normalize_action(raw, messages, today, continuation=None):
     if not isinstance(raw, dict):
         raise ValueError("Specify an income or expense.")
     result = dict(raw)
-    text = recording_text(messages)
+    text = recording_text(messages, continuation)
     dates = set(explicit_dates(text))
     if raw.get("kind") == "expense":
         for word, offset in (("today", 0), ("yesterday", -1), ("tomorrow", 1)):
@@ -59,6 +59,9 @@ def normalize_action(raw, messages, today):
             raise ValueError("Clarify the payment date.")
         result["date"] = dates.pop().isoformat()
     elif raw.get("kind") == "income":
+        for word, offset in (("today", 0), ("yesterday", -1), ("tomorrow", 1)):
+            if re.search(rf"\b{word}\b", text, re.I):
+                dates.add(today + timedelta(days=offset))
         periods = {(d.year, d.month) for d in dates}
         for word, offset in (("this", 0), ("current", 0), ("last", -1), ("previous", -1), ("next", 1)):
             if re.search(rf"\b{word}\s+month\b", text, re.I):
@@ -87,4 +90,13 @@ def pending_reply(action, currency="AED", rate=None):
         label = f"{calendar.month_name[day.month]} {day.day}, {day.year}"
         return f"Ready to record {currency} {amount:,.2f} for {action.category} on {label}. Confirm to save this expense."
     label = f"{calendar.month_name[action.month]} {action.year}"
+    if action.income_operation == "add":
+        factor = rate if currency == "CNY" else Decimal(1)
+        total = action.income_after * factor
+        received = action.date.strftime("%B %d, %Y")
+        before = (f" The saved total is currently {currency} {action.income_before * factor:,.2f}." if action.income_before is not None
+                  else " No income total is saved for that month; this does not establish your complete or recurring income.")
+        return (f"Ready to add a one-time income receipt of {currency} {amount:,.2f}, received {received}, to {label}."
+                + before + f" Confirming will make that month's saved total {currency} {total:,.2f}. "
+                "This adds the receipt; it does not replace the total with the receipt amount or change other months. Confirm to save.")
     return f"Ready to set your monthly income to {currency} {amount:,.2f} for {label}. Confirm to save; this replaces any saved income for that month."

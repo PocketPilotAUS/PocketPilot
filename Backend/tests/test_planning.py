@@ -101,7 +101,7 @@ def test_history_context_is_per_user(api_client):
 def test_chat_updates_planning_profile_and_returns_calculated_draft(api_client, monkeypatch):
     headers = login(api_client)
     monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({'reply': 'Review your plan', 'action': None, 'planning': profile()}))
-    result = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'These are my planning details'}]})
+    result = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'These are my planning details: ' + json.dumps(profile())}]})
     assert result.status_code == 200
     assert result.json()['plan']['ready']
     assert result.json()['plan']['requiredMonthly'] > 0
@@ -111,7 +111,7 @@ def test_chat_updates_planning_profile_and_returns_calculated_draft(api_client, 
     draft = result.json()['planning_profile']
     captured = []
     monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda messages: captured.extend(messages) or json.dumps({'reply': 'Advice', 'action': None, 'planning': None}))
-    api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'How do I cut spending?'}], 'planning_profile': draft})
+    api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'These are my planning details: ' + json.dumps(profile())}, {'role': 'assistant', 'content': 'Review your plan'}, {'role': 'user', 'content': 'How do I cut spending?'}], 'planning_profile': draft})
     assert 'verified assessment' in captured[0]['content']
     assert 'Emergency fund' in captured[0]['content']
 
@@ -132,7 +132,7 @@ def test_saved_profile_can_generate_plan_without_reentering_details(api_client, 
     headers = login(api_client)
     api_client.put('/planning/profile', headers=headers, json=profile())
     monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({'reply': 'Review the calculated plan', 'action': None, 'planning': None}))
-    result = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Make me a budget plan'}]})
+    result = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Make me a budget plan using my saved Emergency fund goal'}]})
     assert result.json()['plan']['ready'] is True
 
 
@@ -153,7 +153,7 @@ def test_nested_protocol_is_not_displayed_and_empty_defaults_do_not_clear_data(a
     headers = login(api_client)
     api_client.put('/planning/profile', headers=headers, json=profile())
     monkeypatch.setattr('app.routers.chat.generate_chat_reply', lambda _: json.dumps({'reply': '{"action": null, "planning": {"income": 8500}}', 'action': None, 'planning': {'current_amount': None, 'expenses': {}, 'protected_categories': []}}))
-    response = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Help with my budget'}]}).json()
+    response = api_client.post('/ai/chat', headers=headers, json={'messages': [{'role': 'user', 'content': 'Help with my budget using my saved Emergency fund goal'}]}).json()
     assert not response['reply'].startswith('{')
     assert response['planning_profile']['current_amount'] == '0'
     assert 'Rent' in response['planning_profile']['expenses']

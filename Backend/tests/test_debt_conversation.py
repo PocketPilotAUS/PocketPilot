@@ -294,7 +294,9 @@ def test_combined_plan_has_one_budget_category_and_rolls_paid_off_loan_target(ap
     from uuid import uuid4
     headers, loan, say, _, _, _ = conversation
     api_client.post('/debts',headers=headers,json={'name':'Other loan','balance':12000,'annual_rate':0,'remaining_months':24})
-    plan = propose(say)['plan']
+    say('Help me make a plan to pay off all my loans faster.')
+    say('Can I do it in 2 years?', 'adjust')
+    plan = say('yes please', 'accept')['plan']
     assert plan['monthlyContribution'] == 2000
     saved = api_client.post('/planning/debt-plans',headers=headers,json={'token':plan['debtConfirmation'],'apply_to_budget':True})
     assert saved.status_code == 201
@@ -305,3 +307,22 @@ def test_combined_plan_has_one_budget_category_and_rolls_paid_off_loan_target(ap
     api_client.post(f"/debts/{loan['id']}/payments",headers=headers,json={'amount':36000,'paid_on':'2026-10-01','request_key':str(uuid4())})
     following = api_client.get('/budget/monthly?year=2026&month=11',headers=headers).json()
     assert next(row['target'] for row in following['ideal_budget']['allocations'] if row['category']=='Debt') == 2000
+
+
+def test_elliptical_year_adjustment_is_grounded_in_prior_user_timeframe(conversation, db_session):
+    _, _, say, pending, _, _ = conversation
+    propose(say)
+    changed = say("Actually, let's do three.", 'adjust', interpret={
+        'duration_count_text': 'three', 'duration_unit': 'year'})
+    assert changed['plan']['months'] == 36
+    assert changed['plan']['monthlyContribution'] == 1000
+    assert db_session.query(FinancialPlan).count() == 0
+
+
+def test_elliptical_timeframe_cannot_invent_a_unit(conversation):
+    _, _, say, pending, _, _ = conversation
+    say('Help me make a plan to pay off my debt faster.')
+    result = say("Actually, let's do three.", 'adjust', interpret={
+        'duration_count_text': 'three', 'duration_unit': 'year'})
+    assert result['plan'] is None
+    assert unseal(pending[0], 1, 'debt_conversation').get('deadline') is None

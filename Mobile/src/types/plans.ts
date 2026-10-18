@@ -57,6 +57,8 @@ export type FinancialPlan = {
   };
 
   id?: string;
+  reviewId?: string;
+  reviewStatus?: "pending" | "rejected" | "saved" | "expired";
   ready: boolean;
   title: string;
   kind: string;
@@ -66,6 +68,7 @@ export type FinancialPlan = {
   baselineSpending: number;
   availableBefore: number;
   availableAfter: number;
+  remainingAfterSavings?: number;
 
   requiredMonthly: number;
   monthlyContribution: number;

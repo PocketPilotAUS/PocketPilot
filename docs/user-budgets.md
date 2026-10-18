@@ -15,3 +15,9 @@ Open Budget Tracker from Home/Spending. Select category tiles, enter monthly amo
 Version-2 category amounts occupy the existing budget JSON field; this is not a new database table. Historical transaction categories are not renamed when a target label changes. Matching is case-insensitive; unmatched costs remain in totals and appear unbudgeted. Budgets are month-specific and are not automatically copied into a new month.
 
 Review my budget with AI sends a specific review period and saved facts. That mode suppresses action/profiling writes; an explanation alone does not change the budget. Explicit monitoring-adjustment acceptance is a separate workflow.
+
+## Income receipts and planning headroom
+
+AI receipts explicitly add to the selected month's saved income total; replacing that total is a separate reviewed operation. Receipts do not establish recurring salary or a separate transaction ledger. Income lookup creates no recording state. Hypothetical income changes stay read-only and distinguish one-time from recurring scenarios.
+
+For a budget-backed savings plan, effective headroom before savings is income minus effective targets plus accepted proposed cuts. Remaining after monthly savings subtracts the proposed contribution once. Debt-aware summaries replace a canonical Debt target with the derived obligation, rather than adding the same obligation twice; arbitrary expense labels/duplicate manually entered payments cannot always be semantically deduplicated. Actual transactions and paid debt are distinct from these planned figures.

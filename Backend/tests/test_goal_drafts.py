@@ -93,7 +93,10 @@ def body(draft):
 def test_confirmation_is_explicit_idempotent_and_owner_scoped(api_client,db_session):
     alice=auth(api_client); budget=setup(api_client,alice)
     now=datetime.now(timezone(timedelta(hours=4))).date()
-    draft=draft_plan(PROFILE,budget,now)
+    calculated=draft_plan(PROFILE,budget,now)
+    reviewed=api_client.post('/planning/budget-plans/preview',headers=alice,json=body(calculated))
+    assert reviewed.status_code==200,reviewed.text
+    draft=reviewed.json()
     first=api_client.post('/planning/budget-plans',headers=alice,json=body(draft))
     assert first.status_code==201
     repeated=api_client.post('/planning/budget-plans',headers=alice,json=body(draft))
@@ -103,7 +106,7 @@ def test_confirmation_is_explicit_idempotent_and_owner_scoped(api_client,db_sess
     assert len(api_client.get('/planning/plans',headers=alice).json())==1
     bob=auth(api_client,'bob@example.com')
     assert api_client.get('/planning/plans',headers=bob).json()==[]
-    assert api_client.post('/planning/budget-plans',headers=bob,json=body(draft)).status_code==409
+    assert api_client.post('/planning/budget-plans',headers=bob,json=body(draft)).status_code==404
     assert api_client.put('/planning/budget-plans/'+first.json()['id'],headers=bob,json=body(draft)).status_code==404
     assert api_client.post('/planning/budget-plans',json=body(draft)).status_code==401
 
@@ -111,7 +114,10 @@ def test_confirmation_is_explicit_idempotent_and_owner_scoped(api_client,db_sess
 def test_stale_budget_rejected_and_edit_preview_does_not_save(api_client,db_session):
     headers=auth(api_client); budget=setup(api_client,headers)
     now=datetime.now(timezone(timedelta(hours=4))).date()
-    draft=draft_plan(PROFILE,budget,now)
+    calculated=draft_plan(PROFILE,budget,now)
+    reviewed=api_client.post('/planning/budget-plans/preview',headers=headers,json=body(calculated))
+    assert reviewed.status_code==200,reviewed.text
+    draft=reviewed.json()
     payload=body(draft)
     now=datetime.now(timezone(timedelta(hours=4))).date()
     api_client.put(f'/budget/income?year={now.year}&month={now.month}',headers=headers,json={'amount':9000})
@@ -121,7 +127,9 @@ def test_stale_budget_rejected_and_edit_preview_does_not_save(api_client,db_sess
     assert db_session.query(FinancialPlan).count()==0
     saved=api_client.post('/planning/budget-plans',headers=headers,json=body(preview.json())).json()
     next_draft=draft_plan({**PROFILE,'monthly_contribution':700}, setup(api_client,headers),now)
-    updated=api_client.put('/planning/budget-plans/'+saved['id'],headers=headers,json=body(next_draft))
+    reviewed=api_client.post('/planning/budget-plans/preview',headers=headers,json=body(next_draft))
+    assert reviewed.status_code==200,reviewed.text
+    updated=api_client.put('/planning/budget-plans/'+saved['id'],headers=headers,json=body(reviewed.json()))
     assert updated.status_code==200 and updated.json()['id']==saved['id']
     assert updated.json()['monthlyContribution']==700 and db_session.query(FinancialPlan).count()==1
 

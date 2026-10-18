@@ -94,6 +94,16 @@ def assess(profile, budget, today, choices=None):
     return result
 
 
+
+def with_savings_headroom(plan):
+    """Project the plan snapshot; availableAfter remains pre-contribution capacity."""
+    if not (plan.get("ready") and plan.get("budgetGoalSource") and plan.get("kind") == "savings"):
+        return plan
+    capacity = Decimal(str(plan["availableAfter"]))
+    contribution = Decimal(str(plan["monthlyContribution"]))
+    return dict(plan, remainingAfterSavings=float((capacity - contribution).quantize(Decimal(".01"))))
+
+
 def draft_plan(profile, budget, today, choices=None):
     from uuid import uuid4
     values = dict(profile)
@@ -119,7 +129,7 @@ def draft_plan(profile, budget, today, choices=None):
     values["income"] = budget["income"]
     signature = hashlib.sha256(json.dumps({"profile": values, "budget": fingerprint(budget), "accepted": result["accepted"]}, sort_keys=True).encode()).hexdigest()
     # Goal drafts retain user goal details, not invented household facts.
-    return {"ready": True, "title": values["goal"], "kind": values["goal_kind"], "profile": values,
+    return with_savings_headroom({"ready": True, "title": values["goal"], "kind": values["goal_kind"], "profile": values,
             "budgetGoalSource": True, "confirmationKey": str(uuid4()), "draftFingerprint": signature, "budgetFingerprint": fingerprint(budget),
             "budgetChoices": choices or {}, "income": result["income"], "baselineSpending": result["planned_total"],
             "availableBefore": result["availableBefore"], "availableAfter": result["availableAfter"],
@@ -130,4 +140,4 @@ def draft_plan(profile, budget, today, choices=None):
             "assumptions": ["If you follow this planned budget every month, the projected monthly surplus can fund this goal.",
                             "This is not money already saved or a bank balance.",
                             "Contributions start this calendar month and include the target month. No returns are assumed.",
-                            "Confirming saves a plan only; it does not record savings, transactions or budget changes."]}
+                            "Confirming saves a plan only; it does not record savings, transactions or budget changes."]})

@@ -230,7 +230,7 @@ def test_monthly_choice_from_main_reply_also_produces_draft(api_client, monkeypa
         'planning': {'monthly_contribution': 1000, 'income': 1000}}))
     data = api_client.post('/ai/chat', headers=headers, json={'goal_planning': True,
         'planning_profile': {'goal': 'iPhone', 'goal_kind': 'savings', 'target_amount': 5000},
-        'messages': [{'role': 'user', 'content': 'Lets go with 1k a month'}]}).json()
+        'messages': [{'role': 'user', 'content': 'I want to save 5000 for an iPhone'}, {'role': 'assistant', 'content': 'How much per month?'}, {'role': 'user', 'content': 'Lets go with 1k a month'}]}).json()
     assert data['plan']['monthlyContribution'] == 1000
     assert data['plan']['months'] == 5
     assert Decimal(data['planning_profile']['income']) == 10000

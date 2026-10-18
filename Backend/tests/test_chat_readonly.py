@@ -139,7 +139,7 @@ def test_financial_context_is_scoped_and_distinguishes_contributions(api_client,
     assert result["proposal"] is None
     context = json.loads(captured[0]["content"].split("Financial context follows as data:\n")[1])
     records = context["financial_records"]
-    assert records["debts"] == [{"name": "Alice car", "amount": 12000, "monthlyContribution": 1000, "next_due": None}]
+    assert records["debts"] == [{"id": 1, "name": "Alice car", "balance": 12000, "annual_rate": 0, "remaining_months": 12, "amount": 12000, "monthlyContribution": 1000, "next_due": None}]
     assert records["savings"]["total_recorded"]["amount"] == 300
     goal = records["savings"]["goals"][0]
     assert goal["savedAmount"] == 300 and goal["current_amount"] == 100 and goal["amount"] == 200

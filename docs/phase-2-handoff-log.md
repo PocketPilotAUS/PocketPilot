@@ -1,5 +1,7 @@
 > Historical handoff record. Earlier status and test counts may be superseded. Use the [current documentation index](README.md) for current behavior.
 
+> Current implementation note: earlier claims about local-only rejection, missing draft persistence, placeholder screens or test totals describe their historical milestone. Current AI proposals/reviews have durable status and expiry; setup requires the plan-review migration. See [AI lifecycle](budget-goal-chat.md), [Financial Plans](financial-planning.md), [database](database.md) and [testing](testing.md).
+
 # PocketPilot phase 2 handoff log
 
 This phase starts after the developer handoff for commit `f9c3eb1`. Add each new change here so the next handoff includes implementation details, verification, setup requirements and remaining work. These entries describe local changes; they do not imply a commit, push or merge.

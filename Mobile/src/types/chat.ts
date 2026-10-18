@@ -4,12 +4,16 @@ import type { FinancialPlan, PlanningProfile } from "./plans";
 export type Proposal = {
   id: string;
   kind: "expense" | "income";
+  income_operation?: "add" | "replace";
+  income_before?: string | number | null;
+  income_after?: string | number | null;
   amount: string | number;
   category?: string;
+  description?: string;
   date?: string;
   year?: number;
   month?: number;
-  status: "pending" | "saved" | "dismissed";
+  status: "pending" | "saved" | "dismissed" | "expired";
 };
 
 export type ChatMessage = {
@@ -24,6 +28,7 @@ export type ChatMessage = {
   budgetRequired?: boolean;
   budgetGoal?: BudgetGoal;
   debtState?: string;
+  recordState?: string;
   debtPhase?: string;
 };
 

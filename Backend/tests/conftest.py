@@ -97,3 +97,11 @@ def login_user(client, email="alice@example.com", password="correct-horse-1"):
 
 def auth_headers(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(autouse=True)
+def no_semantic_network(monkeypatch):
+    # Legacy regressions remain offline; semantic tests explicitly replace this.
+    def unavailable(*args):
+        raise ValueError("Semantic interpretation unavailable in offline tests")
+    monkeypatch.setattr("app.routers.chat.interpret_chat_turn", unavailable)

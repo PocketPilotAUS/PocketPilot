@@ -16,3 +16,7 @@ Forecasts consider upcoming commitments and up to three tracked historical month
 `POST /planning/adjustments/accept` explicitly accepts a reviewed proposal using a separate monitoring fingerprint, write lock and UUID request key. Acceptance reduces budget targets and records adjustment history, never changes transactions or actual savings. Optional later deadline/contribution choices require a separate reviewed plan edit.
 
 This is estimated risk monitoring, not bank synchronization or guaranteed recovery. See [planning](financial-planning.md) and [calculations](core-algorithms.md).
+
+## Confirmation scope
+
+Monitoring adjustments retain their separate fingerprint/request-key acceptance path. They are not income/expense ChatProposals and should not be described as transactions. Financial Plan review rejection applies to issued ready plan capabilities; it does not imply rejection/deletion of all existing saved plans or ledger entries. See [review lifecycle](financial-planning.md).

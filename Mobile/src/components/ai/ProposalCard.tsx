@@ -21,17 +21,23 @@ export default function ProposalCard({ proposal, saving, disabled, onConfirm, on
   const { ai, styles, palette } = useAITheme();
 
   const expense = proposal.kind === "expense";
+  const receipt = !expense && proposal.income_operation === "add";
   const Icon = expense ? Receipt : Wallet;
 
+  const month = `${proposal.month ? monthName(proposal.month) : ""} ${proposal.year ?? ""}`;
   const detail = expense
     ? `${proposal.category ?? ""}${proposal.date ? ` · ${formatLongDate(proposal.date)}` : ""}`
-    : `${proposal.month ? monthName(proposal.month) : ""} ${proposal.year ?? ""} · Replaces income for this month`;
+    : receipt
+      ? `${proposal.date ? formatLongDate(proposal.date) : ""} · Adds to ${month} only; other months unchanged. ` +
+        (proposal.income_before != null ? `Saved total: ${formatAED(Number(proposal.income_before))} to ${formatAED(Number(proposal.income_after))}`
+          : `Recorded total after confirmation: ${formatAED(Number(proposal.income_after))}; complete recurring income is unknown.`)
+      : `${month} · Replaces income for this month`;
 
   return (
     <View style={ai.proposal}>
       <View style={ai.proposalHeader}>
         <Icon size={15} color={palette.accent} strokeWidth={2.2} />
-        <Text style={ai.proposalKind}>{expense ? "Add expense" : "Set monthly income"}</Text>
+        <Text style={ai.proposalKind}>{expense ? "Add expense" : receipt ? "Add one-time income" : "Set monthly income"}</Text>
       </View>
 
       <Text style={ai.proposalAmount}>{formatAED(Number(proposal.amount))}</Text>
@@ -71,7 +77,7 @@ export default function ProposalCard({ proposal, saving, disabled, onConfirm, on
             <CircleX size={16} color={palette.textMuted} strokeWidth={2.2} />
           )}
           <Text style={ai.proposalStatusText}>
-            {proposal.status === "saved" ? "Saved to your account" : "Dismissed — nothing saved"}
+            {proposal.status === "saved" ? "Saved to your account" : proposal.status === "expired" ? "Expired - nothing saved" : "Dismissed — nothing saved"}
           </Text>
         </View>
       )}

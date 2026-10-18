@@ -12,7 +12,7 @@ Status reflects implemented code, not a product roadmap promise.
 | Savings | Implemented: saved plans/goals, manual contributions, completed-month snapshots; not a bank balance |
 | Financial Plans | Implemented: guided forms, AI drafts, previews, acceptance, adjustment, rejection and fingerprints |
 | Monitoring | Implemented: deterministic risk levels, AI adjustment/recovery proposals and validated target changes |
-| AI Chat | Implemented: contextual answers and confirmed income/expense proposals; English-oriented intent/date extraction remains conservative |
+| AI Chat | Implemented: semantic interpretation, grounded expense/income proposals, saved-debt advice, affordability, follow-ups and topic switching; validation remains conservative |
 | Currency/language/theme | Implemented preferences and AED/CNY conversion; localization is partial and rates are not historical transaction rates |
 | Statement import | Implemented bounded UTF-8 CSV expense import; no PDF/OCR or automatic income import |
 | Deployment hardening | Partial: authentication and scoping exist; no supplied rate limiting, production operations or independent security audit |
@@ -22,3 +22,8 @@ AI output is probabilistic. Server gates reject unsupported or insufficiently ev
 A plan allocation is not a contribution, a debt installment estimate is not a paid transaction, and a confirmed monthly savings snapshot is not a live bank balance. Recurring/automatic debt entries synchronize on application requests, not continuously. There are no shared accounts, bank connections, real payment transfers or push notifications implemented.
 
 The legacy planning test expecting rejection of an unknown category conflicts with implemented custom-category support. See [testing](testing.md). Historical logs contain earlier milestones and are not evidence that an absent feature is complete. Future functionality listed as absent here is not a delivery commitment.
+
+
+Current safety behavior includes multiple independent transaction proposals, generic-acknowledgment handling, immediate explicit cancellation, persisted plan rejection/expiry, current-chat status references and stale/idempotent/concurrent acceptance checks. Completed plan acceptance does not fabricate deposits, income or debt payments. The project owner reports physical-device C1?C7 tests passed; automated/live model evidence is described separately in [testing](testing.md).
+
+No configurable per-account timezone is implemented; relative financial dates use server UAE UTC+4. Income add/replace operations update a month-specific total, not a separate income ledger or recurring salary schedule. The welcome screen retains only the transparent logo, title, turquoise subtitle and smaller centered button.

@@ -13,3 +13,9 @@ Remaining limitations:
 - Strict refresh replay rules can require login after a lost successful response. Offline logout cannot guarantee remote revocation.
 
 Inspect exact staging content for keys, tokens, environment files, databases/journals, exports, backups and personal LAN addresses. See [testing](testing.md).
+
+## Verification boundaries
+
+The project owner reports successful planned physical-device AI functionality and C1?C7 safety testing. Automated tests additionally exercise review revocation, concurrent acceptance, proposal selection/cancellation and account isolation with synthetic data. These results are not a production certification or exhaustive model/device audit.
+
+Chat transcripts are held by the mobile session, but draft/proposal/review metadata can retain descriptions, goal details and reviewed financial snapshots in SQLite. Do not describe all AI conversations or drafts as entirely unpersisted. Local logs and live harness output can contain synthetic financial facts; avoid capturing real account data. Signing-key changes invalidate auth/draft capabilities and require fresh login/review.

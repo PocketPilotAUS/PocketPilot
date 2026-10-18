@@ -1,9 +1,8 @@
 
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView } from "react-native";
+import { Animated, Easing, Image, Pressable, ScrollView, useWindowDimensions } from "react-native";
 import { View, Text } from "../preferences/LocalizedNative";
 
-import PocketPilotLogo from "./PocketPilotLogo";
 import { useDashboardTheme } from "./dashboard/useDashboardTheme";
 import { createWelcomeStyles } from "../styles/WelcomeStyles";
 
@@ -15,7 +14,9 @@ export default function AnimatedWelcome({
   onGetStarted,
 }: Props) {
   const { palette, styles: dashboardStyles } = useDashboardTheme();
-  const styles = createWelcomeStyles(palette);
+  const { width, height } = useWindowDimensions();
+  const logoSize = Math.max(1, Math.min(220, width - 36, height * 0.32) * 0.8);
+  const styles = createWelcomeStyles(palette, logoSize);
 
   const logoScale = useRef(new Animated.Value(0.85)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -63,7 +64,12 @@ export default function AnimatedWelcome({
           ...styles.logo,
         }}
       >
-        <PocketPilotLogo />
+        <Image
+          source={require("../../assets/pocketpilot-logo.png")}
+          style={styles.logoImage}
+          resizeMode="contain"
+          accessibilityLabel="PocketPilot logo"
+        />
       </Animated.View>
 
       <Animated.View
@@ -77,11 +83,6 @@ export default function AnimatedWelcome({
 
         <Text style={styles.subtitle}>
           Your personal finance companion
-        </Text>
-
-        <Text style={styles.description}>
-          Take control of your spending, build smarter budgets,
-          and make confident financial decisions.
         </Text>
 
         <View style={styles.welcomeButtonContainer}>
